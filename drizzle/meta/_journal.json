@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1787232373375,
+      "tag": "0000_acoustic_nekra",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1787241846351,
+      "tag": "0001_low_mephisto",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788705737165,
+      "tag": "0002_fast_shiver_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1788746066997,
+      "tag": "0003_loud_moondragon",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1788750120772,
+      "tag": "0004_groovy_meltdown",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1788762826138,
+      "tag": "0005_productive_star_brand",
+      "breakpoints": true
+    }
+  ]
+}

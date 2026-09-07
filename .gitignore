@@ -1,6 +1,6 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# dependencies
+# 依存関係
 /node_modules
 /.pnp
 .pnp.*
@@ -10,32 +10,51 @@
 !.yarn/releases
 !.yarn/versions
 
-# testing
-/coverage
-
-# next.js
+# ビルド成果物
 /.next/
 /out/
-
-# production
 /build
+/.turbo
+*.tsbuildinfo
+next-env.d.ts
 
-# misc
-.DS_Store
+# テスト
+/coverage
+/test-results
+/playwright-report
+/blob-report
+/.swc
+
+# ---- 絶対に上げてはいけないもの -------------------------------------------
+
+# ローカルのSQLite本体。会社の実データが入っている。
+# (WAL/SHM も同じディレクトリに出るのでまとめて除外)
+/data/
+
+# 秘密。Googleの認証情報・DBの接続文字列・AUTH_SECRET など。
+# .env.example だけはひな形として上げる。
+.env
+.env.*
+!.env.example
 *.pem
+*.key
 
-# debug
+# ---- 環境まわり -----------------------------------------------------------
+
+# Vercel CLI がローカルに作る設定(プロジェクトIDが入る)
+.vercel
+
+# 各自のローカル上書き
+*.local
+
+# エディタ・OS
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+
+# ログ
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
-
-# env files (can opt-in for committing if needed)
-.env*
-
-# vercel
-.vercel
-
-# typescript
-*.tsbuildinfo
-next-env.d.ts

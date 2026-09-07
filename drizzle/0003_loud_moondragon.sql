@@ -1,0 +1,1 @@
+ALTER TABLE `milestones` ADD `parent_id` text;

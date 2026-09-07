@@ -1,26 +1,307 @@
 @import "tailwindcss";
 
+/*
+ * aiment 積み木ボード — public/DashBoard_image.png がこのファイルの仕様。
+ *
+ * 4つの規則だけで全部の見た目が決まる:
+ *   1. 地は生成りの紙 (#fdf8f0)。UIチップは置かない。
+ *   2. 物はぜんぶ「積み木」= 角丸 + 右下にずらしたハードシャドウ(=厚み)。
+ *      ぼかした影は使わない。子供のおもちゃに影のグラデーションは無い。
+ *   3. 色は3つだけ。薄紫=普通 / 桃=重要 / 若草=完了。灰は「持ち手」。
+ *   4. 担当者は「小さい四角の色」でしか表さない。文字で書かない。
+ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fdf8f0; /* 生成りの紙 */
+  --foreground: #14161c;
+  --card: #ffffff;
+  --card-foreground: #14161c;
+  --popover: #ffffff;
+  --popover-foreground: #14161c;
+  --primary: #6c4bf4; /* 積み木の紫 — アクションもこの色 */
+  --primary-foreground: #ffffff;
+  --secondary: #f2ecdf;
+  --secondary-foreground: #14161c;
+  --muted: #f2ecdf;
+  --muted-foreground: #6b6f7d;
+  --accent: #ece7ff;
+  --accent-foreground: #14161c;
+  --destructive: #d83a5e;
+  --destructive-foreground: #ffffff;
+  --border: rgba(20, 22, 28, 0.14);
+  --input: rgba(20, 22, 28, 0.22);
+  --ring: rgba(108, 75, 244, 0.5);
+  --radius: 0.75rem;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: var(--font-inter), "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP",
+    system-ui, sans-serif;
+  --font-mono: var(--font-jbmono), ui-monospace, "Hiragino Kaku Gothic ProN", monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+@theme {
+  /* 紙 */
+  --color-paper: #fdf8f0;
+  --color-paper-dot: #ebe0cd;
+
+  /* 積み木3色。face=天面 / deep=厚みの側面 / ink=面の上に乗る文字 */
+  --color-brick-face: #e7e3ff;
+  --color-brick-deep: #c9c1fb;
+  --color-brick-ink: #221c4d;
+
+  --color-brick-hot-face: #fbd3db;
+  --color-brick-hot-deep: #f2a8bc;
+  --color-brick-hot-ink: #6b1330;
+
+  --color-brick-done-face: #dcf3d2;
+  --color-brick-done-deep: #b0e09b;
+  --color-brick-done-ink: #1e4d17;
+
+  /* 持ち手(左のグレーのつまみ) */
+  --color-grip-face: #d2d2d2;
+  --color-grip-deep: #b4b4b4;
+
+  --color-toy-purple: #6c4bf4;
+  --color-toy-purple-soft: #ece8ff;
+
+  /*
+   * 一覧・設定など「紙ではない」ページ用の意味づけトークン。
+   * 積み木ボードは3色しか使わないが、表形式の画面には
+   * 「順調 / 要注意 / 危険 / 達成」を1語で示す色がいる。
+   * 値はすべて積み木の3色から引いているので、行き来しても世界観は割れない。
+   */
+  --color-faint: #85889a; /* 3階調のいちばん薄い文字 */
+  --color-track: rgba(20, 22, 28, 0.1); /* ゲージの溝 */
+  --color-line-soft: rgba(20, 22, 28, 0.07);
+
+  --color-calm: #6c4bf4; /* 落ち着いている = 積み木の紫 */
+  --color-warm: #b5730a;
+  --color-hot: #d1622a;
+  --color-critical: #c62d55; /* 桃の積み木のインク */
+
+  --color-ontrack: #6c4bf4;
+  --color-ontrack-bg: rgba(108, 75, 244, 0.1);
+  --color-atrisk: #b5730a;
+  --color-atrisk-bg: rgba(181, 115, 10, 0.11);
+  --color-offtrack: #c62d55;
+  --color-offtrack-bg: rgba(198, 45, 85, 0.1);
+  --color-stale: #8b8e9c;
+  --color-stale-bg: rgba(20, 22, 28, 0.05);
+
+  --color-achieved: #2f7d1f; /* 若草の積み木のインク */
+  --color-delta: #2f7d1f;
+  --color-delta-bg: rgba(47, 125, 31, 0.12);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP",
+    system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+/* 紙の目。Figmaの水玉と同じだが、生成り紙なのでごく薄い。 */
+.paper-dots {
+  background-color: var(--color-paper);
+  background-image: radial-gradient(circle at 1px 1px, var(--color-paper-dot) 1.2px, transparent 0);
+  background-size: 26px 26px;
+}
+
+/* ---- 積み木の厚み ------------------------------------------------------- */
+/*
+ * --depth-color を差し替えるだけで、どの要素も同じ「厚み」を持てる。
+ * ぼかしゼロのオフセット影 = 木のブロックの側面。押すと沈む。
+ * 影は**真下にだけ**落とす(横にずらすと積み木が右に傾いて見える)。
+ */
+.brick {
+  box-shadow: var(--depth-x, 0px) var(--depth-y, 5px) 0 0 var(--depth-color, rgba(20, 22, 28, 0.18));
+  transition:
+    box-shadow 90ms ease,
+    transform 90ms ease;
+}
+.brick-press:active {
+  transform: translate(var(--depth-x, 0px), var(--depth-y, 5px));
+  box-shadow: 0 0 0 0 var(--depth-color, rgba(20, 22, 28, 0.18));
+}
+/*
+ * 掴んでいる積み木。厚み(側面)は伸ばさない — 伸ばすと積み木が
+ * 「引き伸ばされた」ように見えてしまう。
+ * 代わりに **積み木ごと(厚みの影ごと)持ち上げ**、その下に別の
+ * やわらかい黒い影を落として「浮いている」ことを見せる。
+ * drop-shadow は box-shadow も含めた実際の形に落ちるので、
+ * 持ち手と面がひとつの塊として浮いて見える。
+ */
+/* 掴んだ塔ぜんぶ。ぴったり重なったまま、まとめて持ち上がる。 */
+.brick-raised {
+  transform: translateY(-7px);
+  transition: transform 90ms ease;
+}
+/* 浮いている影は、掴んだ本人(塔のいちばん下)にだけ落とす。
+   drop-shadow は厚みの影も含めた実際の形に落ちるので、
+   持ち手と面がひとつの塊として浮いて見える。 */
+.brick-lifted {
+  filter: drop-shadow(0 13px 9px rgba(20, 22, 28, 0.28));
+}
+
+/* 数字はモノ体 + tabular(桁がガタつかない) */
+.num {
+  font-family: var(--font-jbmono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--muted-foreground);
+}
+
+/* ---- ボード ------------------------------------------------------------ */
+
+/* 空きスペースのドラッグ = 盤のパン */
+.board-surface {
+  cursor: grab;
+  touch-action: none;
+}
+.board-surface[data-panning="true"] {
+  cursor: grabbing;
+}
+
+/* 積み木は掴める */
+.block-grab {
+  cursor: grab;
+}
+.block-grab[data-dragging="true"] {
+  cursor: grabbing;
+}
+
+/* 展開アニメーション: 枝が上から降りてくる */
+@keyframes branch-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.branch {
+  animation: branch-in 160ms ease backwards;
+}
+
+/* 取り組み中の点線を、ゆっくり時計回りに流す(いわゆる「行進する蟻」) */
+@keyframes marching-ants {
+  to {
+    stroke-dashoffset: -32;
+  }
+}
+.ants {
+  /* 9+7=16px の周期を2つぶん流すと、継ぎ目なくつながる */
+  stroke-dasharray: 9 7;
+  animation: marching-ants 3s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ants {
+    animation: none;
+  }
+}
+
+/* 期間ピルの矢印 */
+.arrow-btn {
+  color: var(--color-toy-purple);
+  transition:
+    transform 120ms ease,
+    opacity 120ms ease;
+}
+.arrow-btn:hover:not(:disabled) {
+  transform: scale(1.14);
+}
+.arrow-btn:disabled {
+  opacity: 0.18;
+  cursor: default;
+}
+
+/* フォーカスリングは全部この形(積み木の角に沿う) */
+:where(button, a, input, textarea, [tabindex]):focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* ---- 一覧ページ側で使う強調 ------------------------------------------- */
+/* 白地の強調はグローではなくリング+落ち影 — 本物の危険だけが浮き上がる */
+.glow-critical {
+  box-shadow:
+    0 0 0 3px rgba(198, 45, 85, 0.14),
+    0 2px 10px rgba(198, 45, 85, 0.2);
+}
+.glow-hot {
+  box-shadow:
+    0 0 0 3px rgba(209, 98, 42, 0.13),
+    0 2px 8px rgba(209, 98, 42, 0.18);
+}
+.glow-achieved {
+  box-shadow:
+    0 0 0 3px rgba(47, 125, 31, 0.13),
+    0 2px 8px rgba(47, 125, 31, 0.16);
+}
+.lane-danger {
+  box-shadow:
+    0 1px 3px rgba(198, 45, 85, 0.1),
+    inset 0 0 0 1px rgba(198, 45, 85, 0.28);
+}
+
+/* 全画面で脈動できるのは1要素だけ */
+@keyframes warn-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 2px rgba(198, 45, 85, 0.15),
+      0 2px 8px rgba(198, 45, 85, 0.18);
+  }
+  50% {
+    box-shadow:
+      0 0 0 6px rgba(198, 45, 85, 0.2),
+      0 4px 16px rgba(198, 45, 85, 0.3);
+  }
+}
+.warn-pulse {
+  animation: warn-pulse 2.4s ease-in-out infinite;
+}
+
+/* 入力欄は紙に空いた凹み — 積み木とは逆に、影を内側へ */
+.inset-field {
+  background: #ffffff;
+  border: 2px solid rgba(20, 22, 28, 0.12);
+  box-shadow: inset 0 2px 0 0 rgba(20, 22, 28, 0.05);
+}
+.inset-field:focus {
+  border-color: var(--color-toy-purple);
+  outline: none;
 }

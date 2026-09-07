@@ -1,36 +1,237 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# aiment Operating Dashboard
 
-## Getting Started
+**aimentの検証状態を映す、AIも読める会社の共有記憶。** 開いて3秒で答える:
+いま何を証明しようとしているか / どこまで進んだか / 順調か / 何が詰まっているか /
+誰が何をしているか / 次に何をすべきか。
 
-First, run the development server:
+これはTodoアプリではありません。中核のルール: **タスクの完了 ≠ 事業の前進。**
+進捗はエビデンスのマイルストーン(「インドネシアのファン30人がアンケートに回答」18/30)
+**のみ**から導出され、タスク数からは決して計算されません。
+
+## クイックスタート
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev        # → http://localhost:3939 (初回起動で data/aiment.db を自動作成)
+npm run seed       # 任意: 積み木ボードのデモ(期間3つ)を投入(データを消去します)
+npm test           # 進捗計算・積み木の配置と積み方・重要判定・やり直しのユニットテスト(95件)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+設定ゼロ・アカウント不要・外部サービス不要。データベースはSQLiteファイル1個
+(`data/aiment.db`)。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 概念
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+Objective(目標)      — 検証中の仮説。フォーカスは常にひとつ。
+Workstream            — 大きな活動領域(ユーザー需要、VTuber供給、…)。5つ以内。
+Milestone             — エビデンスの状態:「外の世界が反応した」。
+                        必ず実数 current / target / unit。目標内で重み付け。
+Task                  — 自分たちの作業だけで完了できる行動。マイルストーンへ貢献する。
+Blocker               — 第一級: 何が詰まり、誰が解除し、何日経ち、何があれば解けるか。
+Update                — 鼓動: 何があった(必須)/結果/次。30秒で記録。
+```
 
-## Learn More
+**マイルストーンのルール:** マイルストーンは外部のエビデンス — ユーザーが回答した、
+VTuberが契約した、お金が動いた。自分たちの作業だけで完了できるなら、それはタスク。
+(「候補50人リストアップ」=タスク。「VTuber3人が契約」=マイルストーン。)
 
-To learn more about Next.js, take a look at the following resources:
+**進捗 ⊥ 確信度。** 進捗=計画のどこまで来たか(実数から計算)。確信度=仮説をまだ
+信じているか(人間の判断、一言の理由が必須、変化は履歴→トレンド表示)。
+「進捗75%なのに確信度が下がっている」がこのツールの示せる最重要シグナルです。
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+**ヘルスは判断、鮮度は機械。** ワークストリームのヘルス(順調/要注意/危険)は人間が
+理由付きで設定。7日間見直されないと「◌ 更新切れ」に視覚的に劣化 — ダッシュボードは
+自分が嘘をつきかけていることを自白します。
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 視覚言語「積み木」(仕様は public/DashBoard_image.png)
 
-## Deploy on Vercel
+紙のうえに木のブロックを置いていく、子供のおもちゃのような見た目。規則は4つだけ:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| # | 規則 | 意味 |
+|---|---|---|
+| 1 | 地は**生成りの紙** `#fdf8f0` + 26pxの水玉 | ここは「作業台」であって書類ではない |
+| 2 | 物はぜんぶ**積み木** = 角丸 + **真下に落ちる**ハードシャドウ | ぼかさない・横にずらさない(横にずらすと傾いて見える)。押すと沈む(`.brick` / `.brick-press`) |
+| 3 | 面の色は**3色だけ** — 薄紫=普通 / 桃=重要 / 若草=完了 | 灰色は「持ち手」であって状態ではない |
+| — | 重なりは**上の段ほど奥**に描く | 下の積み木が手前に来ることで「奥から手前へ積み上がっている」ように見える |
+| 4 | 担当者は**小さな四角の色**でしか表さない | 色 = 人。名前は書かない(IDから決まるので誰の色かは変わらない) |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+「重要(桃)」は勝手に決まります — **期限まで2日以内、または期限切れ、またはブロッカーが
+刺さっているとき**。だから紙のなかで桃色は少数派で、そこだけ目に入ります。
+
+## 積み木ボード(`/` — アプリの本体)
+
+```
+        ‹   [ この期間は何に向かっているのか ]   ›      ← 期間ごとにページを行き来
+                     9/6 ~ 10/6
+
+  [持ち手][ 積み木 = やること ]        [ 積み木 ]
+     │
+     ├── サブタスク                     [ 積み木 ]
+     ├── サブタスク
+     └── サブタスク
+```
+
+### 上のピル = 期間
+
+- 画面の**トップ中央**にあるのが「いまの期間は何に向かっているのか」。左右の `‹ ›`
+  (`← →` キーも同じ)で**前後の期間へ移動**します。`?p=<期間ID>` で深リンクできます
+- 期間は**月に縛られません**。ピルを押すと、目標名・はじまり・おわりをその場で編集でき、
+  同じ場所から他の期間へジャンプ / 新しい期間を作成 / 片づけができます
+- 今日を含む期間には「いま」バッジ。URLに `?p=` が無いときはその期間が開きます
+
+### 積み木を積む（Scratch式）
+
+```
+        [ A ][ B ]         ← 同じ段。ふたつとも C の上に載っている
+        [   C    ]         ← C は土台なので、A+B を支えられる幅まで伸びる
+```
+
+長さの決まりは2つだけです:
+
+1. **基本は名前の長さ** — 短いタスクは短い積み木になります
+2. **上の段を支えきれないときだけ、土台として伸びます**
+
+そろえ方は**つねに左**（中央ぞろえにすると、上に行くほど小さく見えてしまうため）。
+重なりは**すき間ゼロ**でぴったりくっつきます。
+
+| どこへ落とすか | どうなる |
+|---|---|
+| 積み木の**上ふち** | その上に載る（相手が土台になる） |
+| 積み木の**下ふち** | 自分が下に潜って**土台になる**。塔ごと持ち上がる |
+| すでに載っている積み木の**左右3割** | 横から割り込んで**同じ段に並ぶ**(隣とぴったり)。何個でも並べられるし、**ブロックとブロックの間**にも入れられます |
+| 何もない所 | 自由配置（紙に直置き） |
+
+近づけると**点線のガイド**が出て、離す前に「どこに収まるか」が見えます。
+掴んでいる間は**上に載っている積み木も一緒についてきます**(塔ごと持ち上がる)。
+掴んだ積み木は厚みを保ったまま少し浮き上がり、その下にやわらかい影が落ちます。
+
+**座標を持つのは紙に直置きした積み木だけ**です。上に載った積み木の位置は、土台の座標と
+親子関係から毎回計算します（`src/lib/stack-layout.ts`）。だから土台を動かせば塔ごと動くし、
+幅の辻褄がずれることもありません。
+
+### 紙のうえの積み木
+
+- **積み木 = マイルストーン**。ドラッグで自由に置けて、位置は保存されます(10pxグリッド吸着)。
+  他の積み木に寄せると上の表のとおりにくっつきます
+- **左のグレーの持ち手を押すとサブタスクが枝になって降りてきます**。枝の左のチェックで
+  完了、`＋ サブタスク` で追加、行の `×` で片づけ
+- 面の**小さな四角が担当者**（＝持ち主）。押すとその場で担当を替えられます
+- **積み木をクリックすると選択**され、**右に道具箱**が出ます。操作はすべてここに集めてあります
+  （面にボタンを並べるとタスク名が見えなくなるため）。`Esc` か紙をクリックで解除
+
+```
+[⌄][S  初回セッションの台本を固める  9/8 ]  [ 📅 👤 🏳 │ ✓ ✕ ]
+                                              ↑ 選ぶと出る道具箱
+```
+
+| 道具 | できること |
+|---|---|
+| 📅 | **期限**（任意）。`今日 / 明日 / 今週おわり / 来週 / この期間のおわり` かカレンダーで指定 |
+| 👤 | **これに取り組む**。その人の色の**点線が積み木をゆったり囲んでゆっくり流れ**、**積み木の奥**が薄くその色に染まり、名札が右上に乗ります。複数人可 |
+| 🏳 | **重要**。いつでも桃色にする |
+| ✓ | できた |
+| ✕ | 片づける |
+
+**点線のない積み木＝まだ誰も手をつけていない**、が一目でわかります（担当者＝持ち主とは別の印）。
+- タイトルはクリックで書きかえ。掴んで動かした時は編集に入りません(4px以上動いたらドラッグ)
+- 面にホバーすると右端に **✓(できた) / ✕(片づける)**
+- 何もない所を**ダブルクリックすると新しい積み木**を置けます
+- 何もない所のドラッグ = 紙のパン。`⌘/Ctrl + ホイール` = 拡大縮小。右下の「もどす」で初期位置へ
+- **水玉は紙の模様**なので、パンでは一緒に動き、拡大では一緒に間隔が広がります(Figmaと同じ)
+
+### やり直し(`⌘Z` / `⇧⌘Z`)
+
+盤の操作はすべて取り消せます — 移動 / 作成 / 片づけ / 名前 / 担当者 / できた / サブタスクの
+追加・完了・名前・削除。右下のボタンでも同じことができます(`Ctrl+Y` も可)。
+
+**DBを巻き戻しているのではなく、「元に戻す手順」を一緒に覚えているだけ**です。例えば
+(100,200)→(300,400) に動かしたら「もう一度 (100,200) に動かす」を覚えておく。だから
+相方が同時に触っていても、相手の変更を巻き込んで消すことはありません。
+入力欄の中では横取りせず、ブラウザの文字のやり直しが効きます。
+
+### 動作確認
+
+```bash
+npm run seed                                    # 画像と同じ盤 + 前後の期間
+npm run dev
+npm run e2e:board                               # 実機Chromeで60項目
+```
+
+### ほかの画面
+
+`一覧`(`/tasks`)と`設定`(`/settings`)は `(app)` ルートグループにあり、同じ紙・同じ積み木・
+同じ担当者の色で描かれます。`一覧` は盤を横断して「いま誰が何を持っているか」だけを見る画面、
+`設定` はメンバー(=色)と期間の一覧です。
+
+> 旧UIだった `/objective/{id}` と `/workstream/{id}` のページは削除しました。
+> **データとAPI/MCPはそのまま**です(ブロッカー・更新記録・確信度は
+> `src/lib/services/` と `/api/v1/*` に残っています)。画面が必要になったら積み木の言葉で作り直します。
+
+## 2つのゴールデン入力
+
+- **カウンター更新(5秒以内):** 画面のどの分数(18/30)でもクリック → ステッパー+任意メモ。
+- **更新の記録(30秒以内):** どこでも `u` キー → 「何があった？」1項目だけ必須。
+  結果/次/カウンター/ブロッカーは任意で同時記録。
+
+## AIエージェント向け
+
+ダッシュボードとAPIは同じもの — `GET /api/v1/summary` は画面が描画するオブジェクト
+そのものを返します(明示enum・ISO日時・名前の非正規化・鮮度と年齢フィールド)。
+
+```
+GET   /api/v1/summary                  # フォーカス・レーン・ブロッカー・更新・週次デルタ
+GET   /api/v1/tasks?owner=&open=true   # メンバーの優先順位付き未完了タスク
+GET   /api/v1/blockers?status=active
+GET   /api/v1/updates?limit=10
+GET   /api/v1/members
+GET   /api/v1/objectives/{id}
+POST  /api/v1/tasks                    # タスク作成
+POST  /api/v1/updates                  # 更新記録(カウンター・ブロッカー同時可)
+PATCH /api/v1/milestones/{id}          # {current_value, note?} カウンター更新
+PATCH /api/v1/workstreams/{id}         # {health, health_note} / {next_action}
+PATCH /api/v1/objectives/{id}          # {confidence, confidence_note}
+```
+
+エージェントの書き込みは `x-agent-name` ヘッダで attribution され、追記専用の
+`activity_log` に記録されます — 「なぜ%が動いた？」に常に答えられます。
+
+### MCPサーバー(実装済み)
+
+```bash
+npm run mcp                                # stdioで起動
+claude mcp add aiment -- npx tsx /path/to/aiment_Dashboard/mcp/server.ts
+```
+
+21ツール(`get_dashboard_summary` / `get_my_tasks` / `update_milestone_progress` /
+`add_progress_update` / `set_confidence` など)がサービス層と1:1対応。
+「aiment今どんな感じ？」「今日僕は何をすべき？」に単独で答えられます。
+エージェント名は環境変数 `AIMENT_AGENT_NAME`(既定 `mcp`)。
+
+## アーキテクチャ
+
+- Next.js (App Router) + TypeScript + Tailwind v4 + shadcn/ui
+- Drizzle ORM + better-sqlite3 (WAL)。スキーマ `src/lib/db/schema.ts`、マイグレーション自動適用
+- 認証なし(信頼できる少人数のローカルツール):「自分が誰か」はメンバー選択クッキー。
+  `members.auth_user_id` はSupabase Auth用に予約済み
+- Postgres/Supabase移行路: pg互換型のみ・ISO日時TEXT・enumはTEXT+`constants.ts`検証 —
+  `sqlite-core`→`pg-core`の差し替えで移行可能(docs/agent-reports/E-architecture.md)
+
+```
+src/lib/services/   ← 全ビジネスロジック(UI・REST・MCPが同じ関数を使う)
+src/lib/db/         ← スキーマ+接続(エンジンを知る唯一の層)
+src/app/actions.ts  ← Server Actions: 検証→サービス→revalidate の薄いラッパー
+src/app/api/v1/     ← エージェント向けREST(同じサービス)
+mcp/server.ts       ← MCPサーバー(同じサービス)
+docs/               ← 設計判断と、それを生んだエージェントレビュー一式
+```
+
+## 設計ドキュメント
+
+実装前に独立エージェントのパネルで レサーチ→批評→設計 を行いました:
+`docs/DESIGN.md`(拘束力のある統合仕様)と `docs/agent-reports/`
+(A=プロダクト戦略 / B=市場調査 / C=悪魔の代弁者 / D=UX / E=アーキテクチャ /
+G=緩急リデザイン / H=ホワイトボード仕様と期間ナビゲーション)。
+
+意図的に**作らなかったもの**: 認証、マルチワークスペース、チャート、ガント、通知、
+自動化、カスタマイズ可能なダッシュボード、タスク数由来の進捗(最後のこれが本体)。
