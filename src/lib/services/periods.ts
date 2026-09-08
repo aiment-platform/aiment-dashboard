@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId, nowIso } from "@/lib/ids";
 import { logActivity, type Actor } from "./activity";
@@ -114,16 +114,19 @@ async function workstreamIndex() {
 export async function listPeriods(): Promise<PeriodSummary[]> {
   const db = getDb();
   const t = today();
-  const wsIdx = await workstreamIndex();
+  // この3つは互いを待つ必要がないので同時に聞く(外のDBだと往復の待ちが効いてくる)
+  const [wsIdx, msRows, objRows] = await Promise.all([
+    workstreamIndex(),
+    db.select().from(schema.milestones),
+    db.select().from(schema.objectives),
+  ]);
   const counts = new Map<string, number>();
-  for (const m of await db.select().from(schema.milestones)) {
+  for (const m of msRows) {
     if (m.status === "dropped") continue;
     const objId = wsIdx.get(m.workstreamId)?.objectiveId;
     if (objId) counts.set(objId, (counts.get(objId) ?? 0) + 1);
   }
-  return (await db
-    .select()
-    .from(schema.objectives))
+  return objRows
     .filter((o) => o.status !== "archived")
     .sort(periodOrder)
     .map((o) => summarise(o, counts.get(o.id) ?? 0, t));
@@ -142,43 +145,82 @@ export async function defaultPeriodId(): Promise<string | null> {
   return periods[0].id;
 }
 
+/**
+ * 盤1枚ぶんのデータ。
+ *
+ * **1問ずつ聞かない。** DBが手元のファイルだったころは1問0.01ミリ秒だったので
+ * 順番に聞いても誰も気づかなかったが、外のPostgres(Neon等)だと1問ごとに
+ * 往復の待ち時間がかかる。10問順番に聞けば、待ち時間も10倍になる。
+ *
+ * なので「前の答えが要るもの」だけ順番にして、あとは Promise.all で**同時に**聞く。
+ * いまは3段階:
+ *   1. 期間そのもの
+ *   2. その期間のワークストリーム(積み木を絞り込むのに要る)
+ *   3. 残り全部(積み木・サブタスク・ブロッカー・取り組み中・メンバー・他の期間)
+ */
 export async function getPeriodBoard(periodId: string): Promise<PeriodBoard | null> {
   const db = getDb();
   const t = today();
+
   const o = (await db.select().from(schema.objectives).where(eq(schema.objectives.id, periodId)))[0];
   if (!o) return null;
 
-  const members = await memberMap();
   const wsRows = await db
     .select()
     .from(schema.workstreams)
     .where(eq(schema.workstreams.objectiveId, periodId));
-  const wsIds = new Set(wsRows.map((w) => w.id));
+  const wsIds = wsRows.map((w) => w.id);
   const wsOwner = new Map(wsRows.map((w) => [w.id, w.ownerId]));
 
-  const msRows = (await db
-    .select()
-    .from(schema.milestones)
-    .orderBy(schema.milestones.sortOrder))
-    .filter((m) => wsIds.has(m.workstreamId) && m.status !== "dropped");
+  // この期間に積み木が無いなら、これ以上DBに聞くことは無い
+  const msRows = wsIds.length
+    ? (
+        await db
+          .select()
+          .from(schema.milestones)
+          .where(inArray(schema.milestones.workstreamId, wsIds))
+          .orderBy(schema.milestones.sortOrder)
+      ).filter((m) => m.status !== "dropped")
+    : [];
+  const msIds = msRows.map((m) => m.id);
 
-  const allTasks = await db.select().from(schema.tasks);
+  const [members, allTasks, activeBlockers, workerRows, siblings] = await Promise.all([
+    memberMap(),
+    msIds.length
+      ? db.select().from(schema.tasks).where(inArray(schema.tasks.milestoneId, msIds))
+      : Promise.resolve([] as (typeof schema.tasks.$inferSelect)[]),
+    db.select().from(schema.blockers).where(eq(schema.blockers.status, "active")),
+    msIds.length
+      ? db
+          .select()
+          .from(schema.blockWorkers)
+          .where(inArray(schema.blockWorkers.milestoneId, msIds))
+          .orderBy(schema.blockWorkers.startedAt)
+      : Promise.resolve([] as (typeof schema.blockWorkers.$inferSelect)[]),
+    listPeriods(),
+  ]);
+
   const blockedTaskIds = new Set(
-    (await db
-      .select()
-      .from(schema.blockers)
-      .where(eq(schema.blockers.status, "active")))
-      .map((b) => b.taskId)
-      .filter(Boolean) as string[],
+    activeBlockers.map((b) => b.taskId).filter(Boolean) as string[],
   );
-  const workerRows = await db
-    .select()
-    .from(schema.blockWorkers)
-    .orderBy(schema.blockWorkers.startedAt);
+
+  // 積み木ごとに配り直す(ここから先はDBに聞かない)
+  const tasksOf = new Map<string, (typeof schema.tasks.$inferSelect)[]>();
+  for (const x of allTasks) {
+    if (x.status === "dropped" || !x.milestoneId) continue;
+    const list = tasksOf.get(x.milestoneId);
+    if (list) list.push(x);
+    else tasksOf.set(x.milestoneId, [x]);
+  }
+  const workersOf = new Map<string, (typeof schema.blockWorkers.$inferSelect)[]>();
+  for (const w of workerRows) {
+    const list = workersOf.get(w.milestoneId);
+    if (list) list.push(w);
+    else workersOf.set(w.milestoneId, [w]);
+  }
 
   const blocks: PeriodBlock[] = msRows.map((m) => {
-    const subtasks: PeriodSubtask[] = allTasks
-      .filter((x) => x.milestoneId === m.id && x.status !== "dropped")
+    const subtasks: PeriodSubtask[] = (tasksOf.get(m.id) ?? [])
       .sort((a, b) =>
         a.sortOrder !== b.sortOrder ? a.sortOrder - b.sortOrder : a.createdAt.localeCompare(b.createdAt),
       )
@@ -190,7 +232,7 @@ export async function getPeriodBoard(periodId: string): Promise<PeriodBoard | nu
       }));
     const due = m.dueDate?.slice(0, 10) ?? null;
     const daysLeft = due ? Math.round((Date.parse(`${due}T00:00:00Z`) - Date.parse(`${t}T00:00:00Z`)) / 86_400_000) : null;
-    const blocked = allTasks.some((x) => x.milestoneId === m.id && blockedTaskIds.has(x.id));
+    const blocked = (tasksOf.get(m.id) ?? []).some((x) => blockedTaskIds.has(x.id));
     const ownerId = m.ownerId ?? wsOwner.get(m.workstreamId) ?? null;
     return {
       id: m.id,
@@ -204,16 +246,16 @@ export async function getPeriodBoard(periodId: string): Promise<PeriodBoard | nu
       important: m.important === 1,
       urgent: isUrgentBlock({ status: m.status, important: m.important === 1, blocked, daysLeft }),
       owner: ownerId ? { id: ownerId, name: members.get(ownerId)?.name ?? ownerId } : null,
-      workers: workerRows
-        .filter((w) => w.milestoneId === m.id)
-        .map((w) => ({ id: w.memberId, name: members.get(w.memberId)?.name ?? w.memberId })),
+      workers: (workersOf.get(m.id) ?? []).map((w) => ({
+        id: w.memberId,
+        name: members.get(w.memberId)?.name ?? w.memberId,
+      })),
       subtasks,
       done_subtasks: subtasks.filter((s) => s.done).length,
       created_at: m.createdAt,
     };
   });
 
-  const siblings = await listPeriods();
   return {
     period: summarise(o, blocks.length, t),
     siblings,

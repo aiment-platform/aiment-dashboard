@@ -6,6 +6,10 @@ import { useHistory } from "@/components/board/history";
 import {
   deleteBlockAction,
   setBlockStatusAction,
+  setBlocksDoneAction,
+  setBlocksImportantAction,
+  setBlocksStatusAction,
+  setBlocksWorkingAction,
   setWorkingOnBlockAction,
   toggleBlockDoneAction,
   updateBlockAction,
@@ -41,12 +45,17 @@ export function BlockToolbar({
   currentMemberId,
   periodEnd,
   onDuplicate,
+  onHide,
+  onShow,
 }: {
   block: PeriodBlock;
   currentMemberId: string;
   /** 「この期間のおわり」を期限の候補に出すため */
   periodEnd: string | null;
   onDuplicate: () => void;
+  /** 片づけた瞬間に盤から消す(DBの返事を待たない)。盤側が覚えておく。 */
+  onHide: (id: string) => void;
+  onShow: (id: string) => void;
 }) {
   const [, start] = useTransition();
   const { record } = useHistory();
@@ -248,11 +257,18 @@ export function BlockToolbar({
         type="button"
         onClick={() => {
           const before = block.status;
-          start(() => deleteBlockAction(block.id));
+          const drop = () => {
+            onHide(block.id); // 先に盤から消す
+            start(() => deleteBlockAction(block.id));
+          };
+          drop();
           record({
             label: `「${block.title}」を片づけた`,
-            undo: () => start(() => setBlockStatusAction(block.id, before)),
-            redo: () => start(() => deleteBlockAction(block.id)),
+            undo: () => {
+              onShow(block.id);
+              start(() => setBlockStatusAction(block.id, before));
+            },
+            redo: drop,
           });
         }}
         className={cn(BTN, "hover:text-destructive")}
@@ -279,11 +295,15 @@ export function MultiToolbar({
   currentMemberId,
   onDuplicate,
   onClear,
+  onHide,
+  onShow,
 }: {
   blocks: PeriodBlock[];
   currentMemberId: string;
   onDuplicate: () => void;
   onClear: () => void;
+  onHide: (id: string) => void;
+  onShow: (id: string) => void;
 }) {
   const [, start] = useTransition();
   const { record } = useHistory();
@@ -292,15 +312,13 @@ export function MultiToolbar({
   const allImportant = blocks.every((b) => b.important);
   const allWorking = blocks.every((b) => b.workers.some((w) => w.id === currentMemberId));
 
-  const each = (fn: (b: PeriodBlock) => Promise<void>) =>
-    start(async () => {
-      for (const b of blocks) await fn(b);
-    });
-
-  const setDone = (v: boolean) => each((b) => toggleBlockDoneAction(b.id, v));
-  const setFlag = (v: boolean) => each((b) => updateBlockAction(b.id, { important: v }));
+  // まとめて操作は「1個ずつ呼ぶ」のではなく1回で渡す。
+  // 1個ずつだと選んだ数だけ往復し、そのたび画面を作り直すので、外のDBだと待ちが積み上がる。
+  const ids = blocks.map((b) => b.id);
+  const setDone = (v: boolean) => start(() => setBlocksDoneAction(ids, v));
+  const setFlag = (v: boolean) => start(() => setBlocksImportantAction(ids, v));
   const setWorking = (v: boolean) =>
-    each((b) => setWorkingOnBlockAction(b.id, v, currentMemberId || undefined));
+    start(() => setBlocksWorkingAction(ids, v, currentMemberId || undefined));
 
   return (
     <div
@@ -395,15 +413,19 @@ export function MultiToolbar({
         type="button"
         onClick={() => {
           const before = blocks.map((b) => ({ id: b.id, status: b.status }));
-          each((b) => deleteBlockAction(b.id));
+          const drop = () => {
+            before.forEach((b) => onHide(b.id)); // 先に盤から消す
+            start(() => setBlocksStatusAction(before.map((b) => ({ id: b.id, status: "dropped" }))));
+          };
+          drop();
           onClear();
           record({
             label: `${blocks.length}個を片づけた`,
-            undo: () =>
-              start(async () => {
-                for (const b of before) await setBlockStatusAction(b.id, b.status);
-              }),
-            redo: () => each((b) => deleteBlockAction(b.id)),
+            undo: () => {
+              before.forEach((b) => onShow(b.id));
+              start(() => setBlocksStatusAction(before));
+            },
+            redo: drop,
           });
         }}
         className={cn(BTN, "hover:text-destructive")}

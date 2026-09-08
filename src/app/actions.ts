@@ -424,6 +424,66 @@ export async function duplicateBlocksAction(items: z.infer<typeof duplicateSchem
   return ids;
 }
 
+/*
+ * ---- まとめて操作するときの口 ----------------------------------------------
+ *
+ * 複数選んで「できた」を押したとき、1個ずつ actions を呼ぶと
+ * **選んだ数だけ往復**し、そのたびに画面ぜんぶを作り直すことになる。
+ * 外のDB(Neon等)だと、これが数秒の待ちになる。
+ * まとめて1回で受けて、画面の作り直しも最後に1回だけにする。
+ */
+const idsSchema = z.array(z.string().min(1)).min(1).max(200);
+
+export async function setBlocksDoneAction(ids: string[], done: boolean) {
+  const list = idsSchema.parse(ids);
+  const { updateMilestoneProgress } = await import("@/lib/services/milestones");
+  const { getDb, schema: s } = await import("@/lib/db");
+  const { inArray } = await import("drizzle-orm");
+  const actor = await getActor();
+  const rows = await getDb().select().from(s.milestones).where(inArray(s.milestones.id, list));
+  for (const row of rows) {
+    await updateMilestoneProgress(row.id, done ? row.targetValue : 0, actor, {
+      skip_update_row: true,
+    });
+  }
+  refresh();
+}
+
+export async function setBlocksImportantAction(ids: string[], important: boolean) {
+  const list = idsSchema.parse(ids);
+  const actor = await getActor();
+  for (const id of list) {
+    await milestones.updateMilestone(id, { important }, actor);
+  }
+  refresh();
+}
+
+export async function setBlocksWorkingAction(ids: string[], working: boolean, memberId?: string) {
+  const list = idsSchema.parse(ids);
+  const actor = await getActor();
+  const who = memberId || actor.id;
+  if (!who) throw new Error("no member selected");
+  const { setWorkingOnBlock } = await import("@/lib/services/periods");
+  for (const id of list) {
+    await setWorkingOnBlock(id, who, working, actor);
+  }
+  refresh();
+}
+
+/** まとめて片づける / まとめて元に戻す(status を1件ずつ指定できる) */
+export async function setBlocksStatusAction(items: { id: string; status: string }[]) {
+  const list = z
+    .array(z.object({ id: z.string().min(1), status: z.string().min(1) }))
+    .min(1)
+    .max(200)
+    .parse(items);
+  const actor = await getActor();
+  for (const it of list) {
+    await milestones.setMilestoneStatus(it.id, it.status, actor);
+  }
+  refresh();
+}
+
 export async function deleteBlockAction(id: string) {
   await milestones.setMilestoneStatus(id, "dropped", await getActor());
   refresh();

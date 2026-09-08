@@ -16,6 +16,9 @@
     "vercel-build": "npm run db:migrate && next build"
   },
   "dependencies": {
+    "@liveblocks/client": "^3.24.1",
+    "@liveblocks/node": "^3.24.1",
+    "@liveblocks/react": "^3.24.1",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@xyflow/react": "^12.11.3",
     "class-variance-authority": "^0.7.1",

@@ -33,6 +33,16 @@ function connectionString(): string {
   return url;
 }
 
+/**
+ * 開発用: DBを1往復ごとに遅らせて、遠いDB(Neon等)の体感を手元で再現する。
+ *   DB_LATENCY_MS=200 npm run dev
+ * 本番では効かない(効いたら困るので二重に止めてある)。
+ */
+function latency(): number {
+  if (process.env.NODE_ENV === "production") return 0;
+  return Number(process.env.DB_LATENCY_MS ?? 0) || 0;
+}
+
 export function getSql() {
   if (!globalForDb.__aimentSql) {
     globalForDb.__aimentSql = postgres(connectionString(), {
@@ -48,7 +58,20 @@ export function getSql() {
 
 export function getDb(): Db {
   if (!globalForDb.__aimentDb) {
-    globalForDb.__aimentDb = drizzle(getSql(), { schema });
+    const ms = latency();
+    const sql = ms
+      ? new Proxy(getSql(), {
+          apply(target, thisArg, args: unknown[]) {
+            const out = Reflect.apply(target as never, thisArg, args) as Promise<unknown> & {
+              then?: unknown;
+            };
+            return new Promise((resolve, reject) =>
+              setTimeout(() => Promise.resolve(out).then(resolve, reject), ms),
+            );
+          },
+        })
+      : getSql();
+    globalForDb.__aimentDb = drizzle(sql, { schema });
   }
   return globalForDb.__aimentDb;
 }

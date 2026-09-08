@@ -21,6 +21,9 @@ npm run db:migrate                  # テーブルを作る
 npm run seed                        # 任意: デモデータ(期間3つ)を投入。既存データは消えます
 npm run dev                         # → http://localhost:3939
 npm test                            # ユニットテスト(101件)
+
+# 遠いDB(Neon等)の体感を手元で再現する。操作がもたつくときの確認用
+DB_LATENCY_MS=200 npm run dev
 ```
 
 ## デプロイ (Vercel)
@@ -50,9 +53,34 @@ npm test                            # ユニットテスト(101件)
 > Project → Settings → Deployment Protection → Vercel Authentication。
 > ここを切ると、URLを知っている人は誰でも中身を見られます。
 
+### ふたりで同時に見る（任意）
+
+`LIVEBLOCKS_SECRET_KEY` を入れると、こうなります。
+
+- 相手が積み木を動かしたら、**再読み込みなしで**自分の画面にも映る
+- 相手のカーソルが、名前と色つきで紙の上に見える
+
+**入れなくても普通に動きます**（その機能が無いだけ。再読み込みで最新になります）。
+
+設定は [liveblocks.io](https://liveblocks.io) で無料アカウントを作り、
+API keys の **secret key**（`sk_` で始まる方）を環境変数に入れるだけです。
+無料枠は「1つの盤に同時10人 / 月3,000接続」なので、2人なら余ります。
+
+> **この線に流すのは、カーソルと「変わったよ」の合図だけです。**
+> 積み木のデータ本体は Postgres にしか置きません。正しいデータの置き場所が2つあると
+> 「どっちが本当か」が分からなくなるためです（MCPやエージェントも同じ場所を読みます）。
+
+```
+誰かが積み木を動かす
+  → 画面はすぐ動く          ← DBを待たない
+  → Postgres に書く
+  → 「変わったよ」と一言流す ← Liveblocks
+  → 相手のブラウザが取り直す
+```
+
 ### 環境変数
 
-Vercel に入れるのは `DATABASE_URL` だけです（`AGENT_TOKEN` は任意）。
+Vercel に入れるのは **`DATABASE_URL`** だけです（`LIVEBLOCKS_SECRET_KEY` は上記を使う場合のみ）。
 詳しくは `.env.example` を参照。
 
 > **注意:** `npm run seed` は**全部消してから入れ直します**。接続先が localhost でないときは

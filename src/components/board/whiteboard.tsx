@@ -4,15 +4,17 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { toast } from "sonner";
 import {
   createBlockAction,
-  deleteBlockAction,
   duplicateBlocksAction,
   setBlockStatusAction,
+  setBlocksStatusAction,
   stackBlocksAction,
 } from "@/app/actions";
 import { ToyBlock } from "@/components/board/toy-block";
 import { PeriodPill } from "@/components/board/period-pill";
 import { HistoryDock, HistoryProvider, useHistory } from "@/components/board/history";
 import { BlockToolbar, MultiToolbar } from "@/components/board/block-toolbar";
+import { BoardRoom } from "@/components/board/realtime";
+import { RealtimeBridge } from "@/components/board/realtime-bridge";
 import {
   BLOCK_DEPTH,
   BLOCK_H,
@@ -105,34 +107,71 @@ type Drag =
       movers: string[];
     };
 
+/**
+ * サーバーがまだ知らない積み木を、その場ででっちあげる。
+ * 本物が届くまでのあいだ画面に出しておくだけのもの。
+ */
+function newGhost(
+  id: string,
+  title: string,
+  at: { x: number; y: number },
+  ownerId: string,
+  members: { id: string; name: string }[],
+): PeriodBlock {
+  const owner = members.find((m) => m.id === ownerId) ?? null;
+  return {
+    id,
+    title,
+    parent_id: null,
+    sort_order: 0,
+    x: at.x,
+    y: at.y,
+    status: "not_started",
+    due_date: null,
+    important: false,
+    urgent: false,
+    owner: owner ? { id: owner.id, name: owner.name } : null,
+    workers: [],
+    subtasks: [],
+    done_subtasks: 0,
+    created_at: new Date().toISOString(),
+  };
+}
+
 export function Whiteboard(props: {
   period: PeriodSummary;
   siblings: PeriodSummary[];
   blocks: PeriodBlock[];
   members: { id: string; name: string }[];
   currentMemberId: string;
+  /** リアルタイム共有が設定されているか(LIVEBLOCKS_SECRET_KEY があるか) */
+  realtime: boolean;
 }) {
   return (
-    <HistoryProvider>
-      <Board {...props} />
-    </HistoryProvider>
+    <BoardRoom roomId={`board:${props.period.id}`} enabled={props.realtime}>
+      <HistoryProvider>
+        <Board {...props} />
+      </HistoryProvider>
+    </BoardRoom>
   );
 }
 
 function Board({
   period,
   siblings,
-  blocks,
+  blocks: serverBlocks,
   members,
   currentMemberId,
+  realtime,
 }: {
   period: PeriodSummary;
   siblings: PeriodSummary[];
   blocks: PeriodBlock[];
   members: { id: string; name: string }[];
   currentMemberId: string;
+  realtime: boolean;
 }) {
-  const [, start] = useTransition();
+  const [writing, start] = useTransition();
   const { record } = useHistory();
   const surfaceRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<Drag | null>(null);
@@ -160,8 +199,71 @@ function Board({
   const [spaceHeld, setSpaceHeld] = useState(false);
   /** 最後にポインタがあった紙の座標。貼り付け先に使う。 */
   const pointerRef = useRef({ x: 60, y: 60 });
+  /** 相手へ流すカーソル。紙の外に出たら null。 */
+  const sendCursor = useRef<((p: { x: number; y: number } | null) => void) | null>(null);
+  const attachCursor = useCallback((send: (p: { x: number; y: number } | null) => void) => {
+    sendCursor.current = send;
+  }, []);
   /** ⌘C で控えた積み木 */
   const clipboardRef = useRef<string[]>([]);
+
+  /*
+   * ---- サーバーの返事を待たずに見せる層 ------------------------------------
+   *
+   * 書き込みは「DBに入れて、画面を作り直して、また取ってくる」で1往復かかる。
+   * 手元のPostgresなら数ミリ秒だが、Neon のような外のDBだと**秒**になる。
+   * その間なにも変わらないと、消えたように見えたり、元の場所に戻って見えたりする。
+   *
+   * そこで「サーバーがまだ知らない変更」を手元に持っておき、画面には先に反映する。
+   * **消すのはサーバーの返事が来た時ではなく、届いたデータが追いついた時**。
+   * ここを間違えると、返事と再描画のすき間で一瞬だけ元に戻る(今回の不具合)。
+   */
+  /** まだ props に無い積み木(置いた直後・複製した直後) */
+  const [ghosts, setGhosts] = useState<PeriodBlock[]>([]);
+  /** 片づけたが、まだ props に居る積み木 */
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+
+  /*
+   * 上書きは「消す」のではなく、**描くたびに、まだ必要かを見る**。
+   * 本物が届いていれば、その上書きは無かったことにして描く。
+   * (useEffect で setState して消すと、届いた瞬間に2回描くことになる)
+   */
+  const serverIds = useMemo(() => new Set(serverBlocks.map((b) => b.id)), [serverBlocks]);
+
+  /*
+   * 幻を引っこめるのは「本物が届いたとき」。
+   * ただし**片づけたときは幻も一緒に捨てる**必要がある。
+   * 捨てないと、片づけて props から消えた瞬間に「まだ届いていない」と誤解して生き返る。
+   * (だから片づけの入口は hide() に集約してある)
+   */
+  const liveGhosts = useMemo(
+    () => ghosts.filter((g) => !serverIds.has(g.id) && !hidden.has(g.id)),
+    [ghosts, serverIds, hidden],
+  );
+  const liveHidden = useMemo(
+    () => new Set([...hidden].filter((id) => serverIds.has(id))),
+    [hidden, serverIds],
+  );
+
+  const blocks = useMemo(
+    () => [...serverBlocks.filter((b) => !liveHidden.has(b.id)), ...liveGhosts],
+    [serverBlocks, liveHidden, liveGhosts],
+  );
+
+  /** 片づけた: 盤から即座に消す(幻も捨てる)。DBへの反映はあとから追いつく。 */
+  const hide = useCallback((id: string) => {
+    setHidden((h) => new Set(h).add(id));
+    setGhosts((g) => g.filter((x) => x.id !== id));
+  }, []);
+  /** やり直し: 隠していたのをやめる */
+  const show = useCallback((id: string) => {
+    setHidden((h) => {
+      if (!h.has(id)) return h;
+      const n = new Set(h);
+      n.delete(id);
+      return n;
+    });
+  }, []);
 
   /*
    * 盤の状態は「木(だれの上にだれが載っているか)」と
@@ -187,10 +289,25 @@ function Board({
     return { nodes, ground };
   }, [blocks, expanded]);
 
+  /** 届いたデータが移動を反映していたら、その上書きはもう要らない */
+  const livePending = useMemo(() => {
+    if (!pending) return null;
+    const caughtUp = pending.every((m) => {
+      const b = serverBlocks.find((x) => x.id === m.id);
+      if (!b) return false;
+      return (
+        b.parent_id === m.parentId &&
+        (b.x ?? null) === (m.x ?? null) &&
+        (b.y ?? null) === (m.y ?? null)
+      );
+    });
+    return caughtUp ? null : pending;
+  }, [pending, serverBlocks]);
+
   /** サーバーの状態に、返事待ちの移動を重ねたもの */
   const world = useMemo(
-    () => (pending ? applyMoves(base.nodes, base.ground, pending) : base),
-    [base, pending],
+    () => (livePending ? applyMoves(base.nodes, base.ground, livePending) : base),
+    [base, livePending],
   );
   const placed = useMemo(() => layoutAll(world.nodes, world.ground), [world]);
 
@@ -245,20 +362,28 @@ function Board({
     (moves: Move[]) => {
       setPending(moves);
       start(async () => {
-        await stackBlocksAction(
-          moves.map((m) => ({
-            id: m.id,
-            parent_id: m.parentId,
-            sort_order: m.sortOrder,
-            x: m.x,
-            y: m.y,
-          })),
-        );
-        setPending(null);
+        try {
+          await stackBlocksAction(
+            moves.map((m) => ({
+              id: m.id,
+              parent_id: m.parentId,
+              sort_order: m.sortOrder,
+              x: m.x,
+              y: m.y,
+            })),
+          );
+          // ここで setPending(null) はしない。
+          // サーバーの返事が返っても、画面用のデータが届くのはもう少しあと。
+          // その隙間で上書きを外すと、一瞬だけ元の場所に戻って見える。
+        } catch {
+          setPending(null);
+          toast("動かせませんでした");
+        }
       });
     },
     [start],
   );
+
 
   /** いまの状態を、あとで戻せる形(Move[])で写し取る */
   const snapshotOf = useCallback(
@@ -384,6 +509,7 @@ function Board({
 
   const onPointerMove = (e: React.PointerEvent) => {
     pointerRef.current = toPaper(e.clientX, e.clientY);
+    sendCursor.current?.(pointerRef.current);
     const d = dragRef.current;
     if (!d) return;
 
@@ -489,22 +615,41 @@ function Board({
       if (items.length === 0) return;
       let made: string[] = [];
       const make = async () => {
-        made = await duplicateBlocksAction(items);
-        setSelected(new Set(made));
+        // 元の積み木をそのまま写して、先に置いて見せる
+        const temps = items.map((it) => {
+          const src = blocks.find((b) => b.id === it.id);
+          const tempId = `tmp_${Math.random().toString(36).slice(2, 10)}`;
+          return src
+            ? { ...src, id: tempId, parent_id: null, x: it.x, y: it.y }
+            : newGhost(tempId, "", { x: it.x, y: it.y }, currentMemberId, members);
+        });
+        setGhosts((g) => [...g.filter((x) => !serverIds.has(x.id)), ...temps]);
+        try {
+          made = await duplicateBlocksAction(items);
+          const swap = new Map(temps.map((t, i) => [t.id, made[i]]).filter(([, v]) => v) as [string, string][]);
+          setGhosts((g) => g.map((x) => (swap.has(x.id) ? { ...x, id: swap.get(x.id)! } : x)));
+          setPending((ps) => ps?.map((m) => (swap.has(m.id) ? { ...m, id: swap.get(m.id)! } : m)) ?? null);
+          setSelected(new Set(made));
+        } catch {
+          const ids = new Set(temps.map((t) => t.id));
+          setGhosts((g) => g.filter((x) => !ids.has(x.id)));
+          toast("複製できませんでした");
+        }
       };
       start(async () => {
         await make();
         record({
           label,
           undo: async () => {
-            for (const id of made) await setBlockStatusAction(id, "dropped");
+            made.forEach((id) => hide(id));
+            await setBlocksStatusAction(made.map((id) => ({ id, status: "dropped" })));
             setSelected(new Set());
           },
           redo: make,
         });
       });
     },
-    [start, record, setSelected],
+    [start, record, setSelected, blocks, currentMemberId, members, serverIds, hide],
   );
 
   /** ⌘C: いま選んでいる積み木を控える / ⌘V: ポインタの位置に貼る */
@@ -537,41 +682,70 @@ function Board({
     const targets = blocks.filter((b) => selected.has(b.id));
     if (targets.length === 0) return;
     const before = targets.map((b) => ({ id: b.id, status: b.status }));
-    const remove = () =>
-      start(async () => {
-        for (const b of before) await deleteBlockAction(b.id);
-      });
+    const remove = () => {
+      // 先に画面から消す。DBへの書き込みはそのあと追いつく。
+      before.forEach((b) => hide(b.id));
+      // まとめて1回で渡す(1個ずつだと選んだ数だけ往復する)
+      start(() => setBlocksStatusAction(before.map((b) => ({ id: b.id, status: "dropped" }))));
+    };
     remove();
     setSelected(new Set());
     record({
       label: targets.length === 1 ? `「${targets[0].title}」を片づけた` : `${targets.length}個を片づけた`,
-      undo: () =>
+      undo: () => {
+        before.forEach((b) => show(b.id));
         start(async () => {
-          for (const b of before) await setBlockStatusAction(b.id, b.status);
+          await setBlocksStatusAction(before);
           setSelected(new Set(before.map((b) => b.id)));
-        }),
+        });
+      },
       redo: remove,
     });
-  }, [blocks, selected, start, record, setSelected]);
+  }, [blocks, selected, start, record, setSelected, hide, show]);
 
   const createBlock = (title: string, at: { x: number; y: number }) => {
     // redo で作り直すと新しいIDになるので、いまのIDを覚えておいて差し替える
     let id: string | null = null;
     const make = async () => {
-      id = await createBlockAction({
-        period_id: period.id,
-        title,
-        x: at.x,
-        y: at.y,
-        owner_id: currentMemberId || undefined,
-      });
+      // サーバーの返事を待つ前に、仮のIDで画面へ出しておく。
+      // 本物のIDが返ったら差し替え、props に本物が届いたら引っこめる。
+      const tempId = `tmp_${Math.random().toString(36).slice(2, 10)}`;
+      setGhosts((g) => [...g, newGhost(tempId, title, at, currentMemberId, members)]);
+      try {
+        id = await createBlockAction({
+          period_id: period.id,
+          title,
+          x: at.x,
+          y: at.y,
+          owner_id: currentMemberId || undefined,
+        });
+        const realId = id;
+        // 仮のIDを本物に差し替える。
+        // 置いた直後に動かした場合、その移動も仮のIDを指しているので一緒に付け替える
+        // (でないと、本物が届いた瞬間に元の位置へ戻って見える)。
+        setGhosts((g) => g.map((x) => (x.id === tempId ? { ...x, id: realId } : x)));
+        setPending((ps) => ps?.map((m) => (m.id === tempId ? { ...m, id: realId } : m)) ?? null);
+        setSelected((sel) => {
+          if (!sel.has(tempId)) return sel;
+          const n = new Set(sel);
+          n.delete(tempId);
+          n.add(realId);
+          return n;
+        });
+      } catch {
+        setGhosts((g) => g.filter((x) => x.id !== tempId));
+        toast("置けませんでした");
+      }
     };
     start(async () => {
       await make();
       record({
         label: `「${title}」を置いた`,
         undo: async () => {
-          if (id) await setBlockStatusAction(id, "dropped");
+          if (!id) return;
+          const gone = id;
+          hide(gone);
+          await setBlockStatusAction(gone, "dropped");
         },
         redo: make,
       });
@@ -640,6 +814,7 @@ function Board({
         className="board-surface fixed inset-0 overflow-hidden bg-paper"
         data-panning={panning}
         data-space={spaceHeld}
+        onPointerLeave={() => sendCursor.current?.(null)}
         data-testid="whiteboard"
         // 水玉は紙の模様。カメラと同じだけずらし、同じだけ伸び縮みさせる。
         style={{
@@ -897,6 +1072,11 @@ function Board({
             </div>
           )}
 
+          {/* 相手のカーソル。紙の中に置くので、拡大しても位置がずれない */}
+          {realtime && (
+            <RealtimeBridge pending={writing} onReady={attachCursor} />
+          )}
+
           {/* 範囲選択の枠 */}
           {marquee && (
             <div
@@ -926,6 +1106,8 @@ function Board({
                     onDuplicate={() =>
                       duplicate([{ id: b.id, x: snap(p.x + 24), y: snap(p.y + 24) }], "積み木を複製した")
                     }
+                    onHide={hide}
+                    onShow={show}
                   />
                 </div>
               );
@@ -953,6 +1135,8 @@ function Board({
                     )
                   }
                   onClear={() => setSelected(new Set())}
+                  onHide={hide}
+                  onShow={show}
                 />
               </div>
             );
