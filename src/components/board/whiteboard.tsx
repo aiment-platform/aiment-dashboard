@@ -43,7 +43,7 @@ import {
   type StackNode,
 } from "@/lib/stack-layout";
 import type { PeriodBlock, PeriodSummary } from "@/lib/services/periods";
-import { isComposing } from "@/lib/utils";
+import { cn, isComposing } from "@/lib/utils";
 
 /**
  * 積み木を置く紙。
@@ -1189,8 +1189,15 @@ function Board({
           </p>
         )}
 
+        {/*
+          リアルタイムを繋ぐと、Liveblocks の無料プランの印が右下に出る。
+          そのままだと拡大縮小のボタンに重なって押せなくなるので、上に逃がす。
+        */}
         <div
-          className="absolute bottom-6 right-6 flex items-center gap-1.5"
+          className={cn(
+            "absolute right-6 flex items-center gap-1.5",
+            realtime ? "bottom-[68px]" : "bottom-6",
+          )}
           onPointerDown={(e) => e.stopPropagation()}
         >
           <HistoryDock />

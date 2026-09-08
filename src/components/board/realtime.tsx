@@ -88,6 +88,8 @@ export function OtherCursors() {
             key={connectionId}
             className="pointer-events-none absolute"
             style={{ left: cursor.x, top: cursor.y, zIndex: 400 }}
+            data-testid="other-cursor"
+            data-name={info?.name ?? ""}
           >
             <svg width="20" height="24" viewBox="0 0 20 24" fill="none" aria-hidden>
               <path

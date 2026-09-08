@@ -207,7 +207,7 @@ await settle(600);
 ok("積み上げはリロードしても残る", Math.abs((await boxOf("初回セッション")).y - sideA.y) < 6);
 
 // ---- 2a. 日本語変換中の Enter で確定してしまわないこと ---------------------
-await page.mouse.dblclick(1240, 830);
+await page.mouse.dblclick(1240, 690); // 右下は操作の島がいるので避ける
 await settle(350);
 await page.keyboard.type("へんかんちゅう");
 // 「変換を確定する Enter」= isComposing が立った状態の Enter
@@ -367,7 +367,7 @@ await settle(1600);
 ok("複製も ⌘Z で取り消せる", (await count()) === before5);
 
 // ⌘C → ⌘V(ポインタの位置に貼られる)
-await page.mouse.click(1300, 820);
+await page.mouse.click(1300, 780); // 選択解除。右下の島には当てない
 await settle(300);
 await selectBlock("Discordサーバー");
 await page.keyboard.press("Meta+c");
@@ -381,7 +381,7 @@ await settle(1600);
 ok("貼り付けも ⌘Z で取り消せる", (await count()) === before5);
 
 // ⌥ドラッグ = その場に複製(元は動かない / 掴んでいる最中からもう1つ見えている)
-await page.mouse.click(1300, 820);
+await page.mouse.click(1300, 780); // 選択解除。右下の島には当てない
 await settle(300);
 const src5 = await boxOf("Discordサーバー");
 await page.keyboard.down("Alt");
@@ -430,7 +430,7 @@ await settle(300);
 
 // ---- 5. 作成・書きかえ・片づけ --------------------------------------------
 const newTitle = `E2Eの積み木 ${stamp}`;
-await page.mouse.dblclick(1240, 830);
+await page.mouse.dblclick(1240, 690); // 右下は操作の島がいるので避ける
 await settle(350);
 await page.keyboard.type(newTitle);
 await page.keyboard.press("Enter");
