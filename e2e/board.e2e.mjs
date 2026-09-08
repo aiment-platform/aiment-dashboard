@@ -14,7 +14,12 @@ const SHOT_DIR = process.argv[2] ?? "/tmp";
 const stamp = new Date().toISOString().slice(11, 19);
 
 const browser = await chromium.launch({ executablePath: CHROME, headless: true });
-const page = await browser.newPage({ viewport: { width: 1440, height: 950 } });
+// 「Soyaとして書く」状態で始める(アカウント選択のCookieを直接入れる)
+const context = await browser.newContext({ viewport: { width: 1440, height: 950 } });
+await context.addCookies([
+  { name: "aiment_account", value: "mem_soya", domain: "localhost", path: "/", sameSite: "Lax" },
+]);
+const page = await context.newPage();
 const results = [];
 const ok = (name, cond, extra = "") =>
   results.push(`${cond ? "PASS" : "FAIL"} ${name}${extra ? " — " + extra : ""}`);
@@ -26,7 +31,8 @@ const closeLayers = async () => {
     await settle(250);
   }
 };
-const boxOf = (text) => page.locator("[data-block]").filter({ hasText: text }).boundingBox();
+// 複製で同じ名前が複数出ることがあるので first() で取る
+const boxOf = (text) => page.locator("[data-block]").filter({ hasText: text }).first().boundingBox();
 /** 積み木を選ぶ = 面の右あたり(タイトル以外)をクリック。右に道具箱が出る。 */
 const selectBlock = async (text) => {
   const r = await boxOf(text);
@@ -42,6 +48,24 @@ const dragTo = async (from, to, release = true) => {
   await page.mouse.up();
   await settle(1400);
 };
+
+// 0) アカウントを選んでいない人は、まず選択画面へ送られる
+const fresh = await browser.newContext({ viewport: { width: 1440, height: 950 } });
+const freshPage = await fresh.newPage();
+await freshPage.goto(BASE, { waitUntil: "networkidle" });
+ok("未選択なら「だれとして書く？」へ送られる", freshPage.url().endsWith("/who"), freshPage.url());
+ok(
+  "Soya / Futo / Other の3つから選べる",
+  (await freshPage.locator("[data-testid^='account-mem_']").count()) === 3,
+);
+await freshPage.locator("[data-testid='account-mem_futo']").click();
+await freshPage.waitForTimeout(1200);
+ok("選ぶと盤が開く", !freshPage.url().includes("/who"), freshPage.url());
+ok(
+  "選んだ名前が左上に出る",
+  (await freshPage.locator("[data-testid='current-account']").innerText()).includes("Futo"),
+);
+await fresh.close();
 
 await page.goto(BASE, { waitUntil: "networkidle" });
 await page.waitForSelector("[data-testid='period-pill']", { timeout: 20000 });
@@ -107,7 +131,7 @@ ok(
 );
 
 // 描画順: 上の段ほど手前(下の積み木が上の積み木を塗りつぶさない)
-const zOf = (t) => page.locator("[data-block]").filter({ hasText: t }).evaluate((el) => Number(el.style.zIndex));
+const zOf = (t) => page.locator("[data-block]").filter({ hasText: t }).first().evaluate((el) => Number(el.style.zIndex));
 ok(
   "上の段ほど奥に描かれる(下の積み木が手前)",
   (await zOf("初回セッション")) < (await zOf("VTuber 10人")),
@@ -198,8 +222,8 @@ await page.keyboard.press("Escape");
 await settle(300);
 
 // ---- 2b. 重要の切り替え ---------------------------------------------------
-const toneOf = (t) => page.locator("[data-block]").filter({ hasText: t }).getAttribute("data-tone");
-const discord = page.locator("[data-block]").filter({ hasText: "Discordサーバー" });
+const toneOf = (t) => page.locator("[data-block]").filter({ hasText: t }).first().getAttribute("data-tone");
+const discord = page.locator("[data-block]").filter({ hasText: "Discordサーバー" }).first();
 ok("選ぶ前は道具箱が出ていない", (await page.locator("[data-testid='block-toolbar']").count()) === 0);
 await selectBlock("Discordサーバー");
 ok("積み木を選ぶと右に道具箱が出る", (await page.locator("[data-testid='block-toolbar']").count()) === 1);
@@ -317,6 +341,93 @@ await page.waitForSelector("[data-block]");
 await settle(600);
 ok("位置はリロードしても残る", Math.abs((await boxOf("フィードバック")).y - moved.y) < 8);
 
+// ---- 4b. 範囲選択・まとめて操作・複製 --------------------------------------
+const count = () => page.locator("[data-block]").count();
+const before5 = await count();
+
+// 何もない所からドラッグ = 範囲選択
+const topRow = await boxOf("初回セッション");
+await page.mouse.move(60, topRow.y - 42);
+await page.mouse.down();
+await page.mouse.move(1380, topRow.y + 30, { steps: 12 });
+ok("ドラッグ中に選択の枠が出る", (await page.locator("[data-testid='marquee']").count()) === 1);
+await page.mouse.up();
+await settle(500);
+ok("囲んだ積み木がまとめて選ばれる", (await page.locator("[data-testid='multi-toolbar']").count()) === 1);
+const label = (await page.locator("[data-testid='multi-toolbar']").innerText()).split("\n")[0];
+ok("何個選んだかが出る", /^\d+個$/.test(label), label);
+
+// まとめて複製
+await page.locator("[data-testid='multi-duplicate']").click();
+await settle(1600);
+const dupCount = await count();
+ok("まとめて複製できる", dupCount > before5, `${before5} → ${dupCount}`);
+await page.keyboard.press("Meta+z");
+await settle(1600);
+ok("複製も ⌘Z で取り消せる", (await count()) === before5);
+
+// ⌘C → ⌘V(ポインタの位置に貼られる)
+await page.mouse.click(1300, 820);
+await settle(300);
+await selectBlock("Discordサーバー");
+await page.keyboard.press("Meta+c");
+await settle(400);
+await page.mouse.move(1180, 780);
+await page.keyboard.press("Meta+v");
+await settle(1700);
+ok("⌘C → ⌘V で貼り付けられる", (await count()) === before5 + 1, `${before5} → ${await count()}`);
+await page.keyboard.press("Meta+z");
+await settle(1600);
+ok("貼り付けも ⌘Z で取り消せる", (await count()) === before5);
+
+// ⌥ドラッグ = その場に複製(元は動かない / 掴んでいる最中からもう1つ見えている)
+await page.mouse.click(1300, 820);
+await settle(300);
+const src5 = await boxOf("Discordサーバー");
+await page.keyboard.down("Alt");
+await dragTo(
+  { x: src5.x + src5.width - 30, y: src5.y + 26 },
+  { x: src5.x + src5.width - 30, y: src5.y + 240 },
+  false,
+);
+await settle(350);
+ok("⌥ドラッグは離す前から増えて見える", (await count()) === before5 + 1, `${before5} → ${await count()}`);
+ok("複製中は「+」の合図が出る", (await page.locator("[data-testid='duplicate-badge']").count()) === 1);
+ok("複製中も元の積み木は動かない", Math.abs((await boxOf("Discordサーバー")).y - src5.y) < 3);
+await page.mouse.up();
+await settle(1500);
+await page.keyboard.up("Alt");
+ok("⌥ドラッグで複製できる", (await count()) === before5 + 1, `${before5} → ${await count()}`);
+ok(
+  "⌥ドラッグでは元の積み木は動かない",
+  Math.abs((await boxOf("Discordサーバー")).y - src5.y) < 4,
+);
+await page.keyboard.press("Meta+z");
+await settle(1600);
+ok("⌥ドラッグの複製も ⌘Z で取り消せる", (await count()) === before5);
+
+// スペース + ドラッグ = 紙を動かす(範囲選択ではなく)
+const panBefore = await page.locator("[data-block]").first().boundingBox();
+await page.keyboard.down("Space");
+await dragTo({ x: 1300, y: 830 }, { x: 1100, y: 830 });
+await page.keyboard.up("Space");
+ok(
+  "スペース + ドラッグで紙が動く",
+  Math.round((await page.locator("[data-block]").first().boundingBox()).x - panBefore.x) === -200,
+);
+// Backspace で選んだ積み木を片づける
+await page.keyboard.press("Escape");
+await settle(300);
+await selectBlock("体験セッション");
+await page.keyboard.press("Backspace");
+await settle(1500);
+ok("Backspace で選んだ積み木を片づけられる", (await count()) === before5 - 1, `${before5} → ${await count()}`);
+await page.keyboard.press("Meta+z");
+await settle(1600);
+ok("Backspace も ⌘Z で戻せる", (await count()) === before5);
+await page.keyboard.press("Escape");
+await settle(300);
+
 // ---- 5. 作成・書きかえ・片づけ --------------------------------------------
 const newTitle = `E2Eの積み木 ${stamp}`;
 await page.mouse.dblclick(1240, 830);
@@ -362,7 +473,10 @@ const readDots = () =>
   });
 const dotsBefore = await readDots();
 const anyBefore = await page.locator("[data-block]").first().boundingBox();
+// 何もない所のドラッグは範囲選択になったので、パンはスペース併用
+await page.keyboard.down("Space");
 await dragTo({ x: 1300, y: 890 }, { x: 1100, y: 790 });
+await page.keyboard.up("Space");
 const dotsPanned = await readDots();
 const anyPanned = await page.locator("[data-block]").first().boundingBox();
 ok(

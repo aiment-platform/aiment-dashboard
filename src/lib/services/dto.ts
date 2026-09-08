@@ -40,8 +40,8 @@ export function milestoneToDto(m: MilestoneRow): MilestoneDto {
 }
 
 /** Map of member id → row, fetched once per service call. */
-export function memberMap(): Map<string, MemberRow> {
-  const rows = getDb().select().from(schema.members).all();
+export async function memberMap(): Promise<Map<string, MemberRow>> {
+  const rows = await getDb().select().from(schema.members);
   return new Map(rows.map((r) => [r.id, r]));
 }
 

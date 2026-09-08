@@ -59,29 +59,29 @@ export interface DashboardSummary {
 
 export async function getDashboardSummary(): Promise<DashboardSummary> {
   const db = getDb();
-  const ws = db.select().from(schema.workspace).get();
+  const ws = (await db.select().from(schema.workspace))[0];
   const asOf = new Date().toISOString();
 
   let focus: FocusDto | null = null;
   let workstreams: WorkstreamDto[] = [];
 
   if (ws?.focusObjectiveId) {
-    const o = db
+    const o = (await db
       .select()
       .from(schema.objectives)
       .where(eq(schema.objectives.id, ws.focusObjectiveId))
-      .get();
+      )[0];
     if (o) {
-      const members = memberMap();
+      const members = await memberMap();
       workstreams = (await listWorkstreams(o.id)).filter((w) => w.status === "active");
       const wsIds = new Set(workstreams.map((w) => w.id));
       const wsNameById = new Map(workstreams.map((w) => [w.id, w.name]));
-      const msRows = db
+      const msRows = (await db
         .select()
         .from(schema.milestones)
         .orderBy(schema.milestones.sortOrder)
-        .all()
-        .filter((m) => wsIds.has(m.workstreamId) && m.status !== "dropped");
+        
+        ).filter((m) => wsIds.has(m.workstreamId) && m.status !== "dropped");
       // Order the evidence strip by workstream geography, then milestone order.
       const wsOrder = new Map(workstreams.map((w, i) => [w.id, i]));
       msRows.sort(
@@ -101,7 +101,7 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
         confidence: o.confidence as Confidence,
         confidence_note: o.confidenceNote,
         confidence_reviewed_days_ago: daysSince(o.confidenceUpdatedAt),
-        confidence_trend: confidenceTrend(o.id),
+        confidence_trend: await confidenceTrend(o.id),
         health,
         health_note: health === "on_track" ? null : (worstWs?.health_note ?? null),
         start_date: o.startDate,
@@ -122,8 +122,8 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
     workstreams,
     blockers: await getBlockers("active"),
     recent_updates: await getRecentUpdates({ limit: 6 }),
-    week_delta: computeWeekDelta(),
-    days_since_last_signal: computeDaysSinceLastSignal(),
+    week_delta: await computeWeekDelta(),
+    days_since_last_signal: await computeDaysSinceLastSignal(),
   };
 }
 
@@ -137,19 +137,19 @@ export async function getCurrentFocus(): Promise<Pick<
   return { id, title, progress, confidence, health, target_date, days_remaining };
 }
 
-function computeWeekDelta(): WeekDelta {
+async function computeWeekDelta(): Promise<WeekDelta> {
   const db = getDb();
   const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
-  const msMap = new Map(db.select().from(schema.milestones).all().map((m) => [m.id, m]));
+  const msMap = new Map((await db.select().from(schema.milestones)).map((m) => [m.id, m]));
 
   // Counter movement comes from the activity log, so it covers inline bumps,
   // update-carried bumps, and agent writes alike.
-  const progressEvents = db
+  const progressEvents = (await db
     .select()
     .from(schema.activityLog)
     .where(and(gte(schema.activityLog.ts, since), eq(schema.activityLog.action, "progress_updated")))
-    .all()
-    .map(parseActivityRow);
+    
+    ).map(parseActivityRow);
   const deltaByMs = new Map<string, number>();
   for (const e of progressEvents) {
     const before = Number(e.detail?.before ?? 0);
@@ -168,21 +168,21 @@ function computeWeekDelta(): WeekDelta {
       };
     });
 
-  const achieved = db
+  const achieved = (await db
     .select()
     .from(schema.activityLog)
     .where(
       and(gte(schema.activityLog.ts, since), eq(schema.activityLog.action, "milestone_achieved")),
     )
-    .all().length;
+    ).length;
 
-  const updatesCount = db
+  const updatesCount = (await db
     .select()
     .from(schema.updates)
     .where(gte(schema.updates.createdAt, since))
-    .all().length;
+    ).length;
 
-  const allBlockers = db.select().from(schema.blockers).all();
+  const allBlockers = await db.select().from(schema.blockers);
   return {
     evidence_moves: evidenceMoves,
     updates_count: updatesCount,
@@ -193,21 +193,21 @@ function computeWeekDelta(): WeekDelta {
 }
 
 /** Silence detector: powers the "this dashboard may be lying" banner. */
-function computeDaysSinceLastSignal(): number | null {
+async function computeDaysSinceLastSignal(): Promise<number | null> {
   const db = getDb();
-  const lastUpdate = db
+  const lastUpdate = (await db
     .select()
     .from(schema.updates)
     .orderBy(desc(schema.updates.createdAt))
     .limit(1)
-    .get();
-  const lastProgress = db
+    )[0];
+  const lastProgress = (await db
     .select()
     .from(schema.activityLog)
     .where(eq(schema.activityLog.action, "progress_updated"))
     .orderBy(desc(schema.activityLog.ts))
     .limit(1)
-    .get();
+    )[0];
   const candidates = [lastUpdate?.createdAt, lastProgress?.ts].filter(Boolean) as string[];
   if (candidates.length === 0) return null;
   return daysSince(candidates.sort().at(-1));

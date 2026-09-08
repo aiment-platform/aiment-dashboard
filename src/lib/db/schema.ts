@@ -1,30 +1,32 @@
-import { sqliteTable, text, integer, real, index } from "drizzle-orm/sqlite-core";
+import { pgTable, text, integer, doublePrecision, index } from "drizzle-orm/pg-core";
 
 /**
  * Schema rules (see docs/agent-reports/E-architecture.md):
- * - Only column types with 1:1 Postgres equivalents (text, integer, real) — pg migration is mechanical.
+ * - Postgres. 型は text / integer / double precision の3つだけ —
+ *   SQLite で始めたときからこの制約を守っていたので、移行は機械的に済んだ。
  * - Dates are ISO-8601 TEXT (UTC). Enums are TEXT validated against src/lib/constants.ts.
- * - IDs are prefixed nanoids (obj_, ws_, ms_, task_, blk_, upd_, mem_, act_).
+ * - IDs are prefixed nanoids (obj_, ws_, ms_, task_, blk_, upd_, mem_, act_, bw_).
+ * - 真偽値は 0/1 の integer。DBの型を増やさないため(SQLite 時代からの決まりを踏襲)。
  * - Progress is NEVER stored: only milestone current/target/weight are; % is derived at read time.
  */
 
-export const workspace = sqliteTable("workspace", {
+export const workspace = pgTable("workspace", {
   id: text("id").primaryKey(), // singleton row, id = 'workspace'
   name: text("name").notNull(),
   focusObjectiveId: text("focus_objective_id"),
   createdAt: text("created_at").notNull(),
 });
 
-export const members = sqliteTable("members", {
+export const members = pgTable("members", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   role: text("role"),
-  authUserId: text("auth_user_id"), // reserved for Supabase Auth; unused in MVP
+  authUserId: text("auth_user_id"), // 外部認証のユーザーID(将来用・未使用)
   isActive: integer("is_active").notNull().default(1),
   createdAt: text("created_at").notNull(),
 });
 
-export const objectives = sqliteTable("objectives", {
+export const objectives = pgTable("objectives", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
   description: text("description"), // the hypothesis: what we're trying to prove & why
@@ -41,7 +43,7 @@ export const objectives = sqliteTable("objectives", {
   updatedAt: text("updated_at").notNull(),
 });
 
-export const workstreams = sqliteTable(
+export const workstreams = pgTable(
   "workstreams",
   {
     id: text("id").primaryKey(),
@@ -60,7 +62,7 @@ export const workstreams = sqliteTable(
   (t) => [index("ws_objective_idx").on(t.objectiveId)],
 );
 
-export const milestones = sqliteTable(
+export const milestones = pgTable(
   "milestones",
   {
     id: text("id").primaryKey(),
@@ -73,8 +75,8 @@ export const milestones = sqliteTable(
     // 手で立てた「重要」の旗。0 = 期限とブロッカーから自動で決める。
     important: integer("important").notNull().default(0),
     title: text("title").notNull(), // "30 Indonesian users answered the survey"
-    targetValue: real("target_value").notNull(), // binary milestone → 1
-    currentValue: real("current_value").notNull().default(0),
+    targetValue: doublePrecision("target_value").notNull(), // binary milestone → 1
+    currentValue: doublePrecision("current_value").notNull().default(0),
     unit: text("unit"), // "responses" | "people" | null for binary
     weight: integer("weight").notNull().default(1), // relative weight within the OBJECTIVE
     status: text("status").notNull().default("not_started"),
@@ -82,8 +84,8 @@ export const milestones = sqliteTable(
     sortOrder: integer("sort_order").notNull().default(0),
     // ホワイトボード上の自由配置座標。null = 自動レイアウト(いま/次/その先)に追従。
     // 盤座標は会社状態ではないので activity_log には記録しない。
-    boardX: real("board_x"),
-    boardY: real("board_y"),
+    boardX: doublePrecision("board_x"),
+    boardY: doublePrecision("board_y"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },
@@ -94,7 +96,7 @@ export const milestones = sqliteTable(
  * 「いま誰がこの積み木に取り組んでいるか」。担当者(milestones.owner_id)とは別物 —
  * 担当は「持ち主」、こちらは「今まさに手をつけている人」で、複数人が同時に立てられる。
  */
-export const blockWorkers = sqliteTable(
+export const blockWorkers = pgTable(
   "block_workers",
   {
     id: text("id").primaryKey(),
@@ -105,7 +107,7 @@ export const blockWorkers = sqliteTable(
   (t) => [index("bw_milestone_idx").on(t.milestoneId), index("bw_member_idx").on(t.memberId)],
 );
 
-export const tasks = sqliteTable(
+export const tasks = pgTable(
   "tasks",
   {
     id: text("id").primaryKey(),
@@ -128,7 +130,7 @@ export const tasks = sqliteTable(
   ],
 );
 
-export const blockers = sqliteTable(
+export const blockers = pgTable(
   "blockers",
   {
     id: text("id").primaryKey(),
@@ -146,7 +148,7 @@ export const blockers = sqliteTable(
   (t) => [index("blk_status_idx").on(t.status)],
 );
 
-export const updates = sqliteTable(
+export const updates = pgTable(
   "updates",
   {
     id: text("id").primaryKey(),
@@ -156,14 +158,14 @@ export const updates = sqliteTable(
     result: text("result"), // "2 replied, 1 interested"
     next: text("next"), // "book interviews with repliers"
     milestoneId: text("milestone_id"), // provenance: this update moved a milestone
-    valueBefore: real("value_before"),
-    valueAfter: real("value_after"),
+    valueBefore: doublePrecision("value_before"),
+    valueAfter: doublePrecision("value_after"),
     createdAt: text("created_at").notNull(),
   },
   (t) => [index("upd_created_idx").on(t.createdAt)],
 );
 
-export const activityLog = sqliteTable(
+export const activityLog = pgTable(
   "activity_log",
   {
     id: text("id").primaryKey(),

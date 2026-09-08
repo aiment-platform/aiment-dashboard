@@ -11,15 +11,20 @@ export interface MemberDto {
 }
 
 function toDto(row: typeof schema.members.$inferSelect): MemberDto {
-  return { id: row.id, name: row.name, role: row.role, is_active: row.isActive === 1 };
+  return {
+    id: row.id,
+    name: row.name,
+    role: row.role,
+    is_active: row.isActive === 1,
+  };
 }
 
 export async function listMembers(): Promise<MemberDto[]> {
-  return getDb().select().from(schema.members).all().map(toDto);
+  return (await getDb().select().from(schema.members)).map(toDto);
 }
 
 export async function getMember(id: string): Promise<MemberDto | null> {
-  const row = getDb().select().from(schema.members).where(eq(schema.members.id, id)).get();
+  const row = (await getDb().select().from(schema.members).where(eq(schema.members.id, id)))[0];
   return row ? toDto(row) : null;
 }
 
@@ -34,7 +39,7 @@ export async function createMember(
     isActive: 1,
     createdAt: nowIso(),
   };
-  getDb().insert(schema.members).values(row).run();
-  logActivity(actor, "member", row.id, "created", { after: input.name });
+  await getDb().insert(schema.members).values(row);
+  await logActivity(actor, "member", row.id, "created", { after: input.name });
   return toDto({ ...row, authUserId: null });
 }

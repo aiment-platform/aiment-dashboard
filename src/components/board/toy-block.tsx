@@ -303,8 +303,8 @@ export function ToyBlock({
   currentMemberId: string;
   onToggleExpand: () => void;
   onPointerDown: (e: React.PointerEvent) => void;
-  /** 面をクリックした = この積み木を選ぶ(右に道具箱が出る) */
-  onSelect: () => void;
+  /** 面をクリックした = この積み木を選ぶ。Shift併用なら選択に足す/外す。 */
+  onSelect: (additive: boolean) => void;
 }) {
   const [, start] = useTransition();
   const { record } = useHistory();
@@ -353,7 +353,7 @@ export function ToyBlock({
           downAt.current = { x: e.clientX, y: e.clientY };
           onPointerDown(e);
         }}
-        onClick={(e) => wasClick(e) && onSelect()}
+        onClick={(e) => wasClick(e) && onSelect(e.shiftKey)}
       >
         {/* 左の持ち手: 開閉 */}
         <button

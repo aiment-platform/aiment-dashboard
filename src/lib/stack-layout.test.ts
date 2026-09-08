@@ -5,8 +5,11 @@ import {
   findDrop,
   isDescendant,
   layoutAll,
+  blocksInRect,
   planDrop,
+  rectFromPoints,
   rowWidth,
+  topMostOf,
   subtreeWidth,
   STACK_GAP_X,
   STACK_GAP_Y,
@@ -192,5 +195,33 @@ describe("applyMoves", () => {
     expect(placed.get("d")!.y).toBe(500 - BLOCK_H);
     expect(placed.get("d")!.x).toBe(100 + (200 + STACK_GAP_X) * 2); // 左から3番目
     expect(placed.get("c")!.width).toBe(200 * 3 + STACK_GAP_X * 2); // 土台は3つを支える幅に
+  });
+});
+
+describe("範囲選択", () => {
+  const placed = layoutAll(tower, ground);
+  it("触れている積み木を拾う(囲みきらなくてよい)", () => {
+    const hit = blocksInRect(placed, { x: 90, y: 490, w: 30, h: 30 });
+    expect(hit).toContain("c");
+  });
+  it("離れていれば拾わない", () => {
+    expect(blocksInRect(placed, { x: 9000, y: 9000, w: 10, h: 10 })).toEqual([]);
+  });
+  it("どちらの角から引いても同じ矩形になる", () => {
+    expect(rectFromPoints({ x: 10, y: 10 }, { x: 0, y: 0 })).toEqual({ x: 0, y: 0, w: 10, h: 10 });
+    expect(rectFromPoints({ x: 0, y: 0 }, { x: 10, y: 10 })).toEqual({ x: 0, y: 0, w: 10, h: 10 });
+  });
+});
+
+describe("topMostOf", () => {
+  it("土台も上の積み木も選ばれていたら、土台だけ動かす", () => {
+    expect(topMostOf(tower, ["c", "a", "b"])).toEqual(["c"]);
+  });
+  it("上の積み木だけ選ばれていればそれを動かす", () => {
+    expect(topMostOf(tower, ["a", "b"])).toEqual(["a", "b"]);
+  });
+  it("関係のない積み木はそのまま残る", () => {
+    const lone = [...tower, n("d")];
+    expect(topMostOf(lone, ["c", "d"])).toEqual(["c", "d"]);
   });
 });

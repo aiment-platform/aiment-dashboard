@@ -8,13 +8,13 @@ import { milestoneToDto, type MilestoneDto } from "./dto";
 export async function listMilestones(workstreamId?: string): Promise<MilestoneDto[]> {
   const db = getDb();
   const rows = workstreamId
-    ? db
+    ? await db
         .select()
         .from(schema.milestones)
         .where(eq(schema.milestones.workstreamId, workstreamId))
         .orderBy(schema.milestones.sortOrder)
-        .all()
-    : db.select().from(schema.milestones).orderBy(schema.milestones.sortOrder).all();
+        
+    : await db.select().from(schema.milestones).orderBy(schema.milestones.sortOrder);
   return rows.map(milestoneToDto);
 }
 
@@ -42,15 +42,15 @@ export async function createMilestone(
 ): Promise<string> {
   if (input.target_value <= 0) throw new Error("target_value must be > 0");
   const db = getDb();
-  const ws = db
+  const ws = (await db
     .select()
     .from(schema.workstreams)
     .where(eq(schema.workstreams.id, input.workstream_id))
-    .get();
+    )[0];
   if (!ws) throw new Error(`workstream not found: ${input.workstream_id}`);
   const id = newId("ms");
   const now = nowIso();
-  db.insert(schema.milestones)
+  await db.insert(schema.milestones)
     .values({
       id,
       workstreamId: input.workstream_id,
@@ -67,9 +67,8 @@ export async function createMilestone(
       boardY: input.board_y ?? null,
       createdAt: now,
       updatedAt: now,
-    })
-    .run();
-  logActivity(actor, "milestone", id, "model_changed", {
+    });
+  await logActivity(actor, "milestone", id, "model_changed", {
     note: `milestone added: ${input.title} (0/${input.target_value}${input.unit ? ` ${input.unit}` : ""})`,
   });
   return id;
@@ -103,16 +102,15 @@ export async function updateMilestoneProgress(
 ): Promise<ProgressResult> {
   if (newValue < 0) throw new Error("value must be >= 0");
   const db = getDb();
-  const m = db.select().from(schema.milestones).where(eq(schema.milestones.id, id)).get();
+  const m = (await db.select().from(schema.milestones).where(eq(schema.milestones.id, id)))[0];
   if (!m) throw new Error(`milestone not found: ${id}`);
   const before = m.currentValue;
   const newStatus = derivedStatus(newValue, m.targetValue, m.status);
   const now = nowIso();
-  db.update(schema.milestones)
+  await db.update(schema.milestones)
     .set({ currentValue: newValue, status: newStatus, updatedAt: now })
-    .where(eq(schema.milestones.id, id))
-    .run();
-  logActivity(actor, "milestone", id, "progress_updated", {
+    .where(eq(schema.milestones.id, id));
+  await logActivity(actor, "milestone", id, "progress_updated", {
     field: "current_value",
     before,
     after: newValue,
@@ -120,11 +118,11 @@ export async function updateMilestoneProgress(
   });
   const achieved = newStatus === "achieved" && m.status !== "achieved";
   if (achieved) {
-    logActivity(actor, "milestone", id, "milestone_achieved", { note: m.title });
+    await logActivity(actor, "milestone", id, "milestone_achieved", { note: m.title });
   }
   const note = opts.note?.trim();
   if (note && !opts.skip_update_row) {
-    db.insert(schema.updates)
+    await db.insert(schema.updates)
       .values({
         id: newId("upd"),
         workstreamId: m.workstreamId,
@@ -134,8 +132,7 @@ export async function updateMilestoneProgress(
         valueBefore: before,
         valueAfter: newValue,
         createdAt: now,
-      })
-      .run();
+      });
   }
   const updated = { ...m, currentValue: newValue, status: newStatus };
   return { before, after: newValue, achieved, milestone: milestoneToDto(updated) };
@@ -156,13 +153,13 @@ export async function updateMilestone(
   actor: Actor,
 ): Promise<void> {
   const db = getDb();
-  const m = db.select().from(schema.milestones).where(eq(schema.milestones.id, id)).get();
+  const m = (await db.select().from(schema.milestones).where(eq(schema.milestones.id, id)))[0];
   if (!m) throw new Error(`milestone not found: ${id}`);
   if (patch.target_value !== undefined && patch.target_value <= 0) {
     throw new Error("target_value must be > 0");
   }
   const newTarget = patch.target_value ?? m.targetValue;
-  db.update(schema.milestones)
+  await db.update(schema.milestones)
     .set({
       ...(patch.title !== undefined && { title: patch.title }),
       ...(patch.target_value !== undefined && {
@@ -177,17 +174,16 @@ export async function updateMilestone(
       ...(patch.important !== undefined && { important: patch.important ? 1 : 0 }),
       updatedAt: nowIso(),
     })
-    .where(eq(schema.milestones.id, id))
-    .run();
+    .where(eq(schema.milestones.id, id));
   if (patch.target_value !== undefined && patch.target_value !== m.targetValue) {
-    logActivity(actor, "milestone", id, "model_changed", {
+    await logActivity(actor, "milestone", id, "model_changed", {
       field: "target_value",
       before: m.targetValue,
       after: patch.target_value,
     });
   }
   if (patch.weight !== undefined && patch.weight !== m.weight) {
-    logActivity(actor, "milestone", id, "model_changed", {
+    await logActivity(actor, "milestone", id, "model_changed", {
       field: "weight",
       before: m.weight,
       after: patch.weight,
@@ -200,14 +196,13 @@ export async function setMilestoneStatus(id: string, status: string, actor: Acto
     throw new Error(`invalid milestone status: ${status}`);
   }
   const db = getDb();
-  const m = db.select().from(schema.milestones).where(eq(schema.milestones.id, id)).get();
+  const m = (await db.select().from(schema.milestones).where(eq(schema.milestones.id, id)))[0];
   if (!m) throw new Error(`milestone not found: ${id}`);
-  db.update(schema.milestones)
+  await db.update(schema.milestones)
     .set({ status, updatedAt: nowIso() })
-    .where(eq(schema.milestones.id, id))
-    .run();
+    .where(eq(schema.milestones.id, id));
   const action = status === "dropped" ? "model_changed" : "status_changed";
-  logActivity(actor, "milestone", id, action, {
+  await logActivity(actor, "milestone", id, action, {
     field: "status",
     before: m.status,
     after: status,

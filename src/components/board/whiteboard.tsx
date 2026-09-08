@@ -1,11 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { createBlockAction, setBlockStatusAction, stackBlocksAction } from "@/app/actions";
+import { toast } from "sonner";
+import {
+  createBlockAction,
+  deleteBlockAction,
+  duplicateBlocksAction,
+  setBlockStatusAction,
+  stackBlocksAction,
+} from "@/app/actions";
 import { ToyBlock } from "@/components/board/toy-block";
 import { PeriodPill } from "@/components/board/period-pill";
 import { HistoryDock, HistoryProvider, useHistory } from "@/components/board/history";
-import { BlockToolbar } from "@/components/board/block-toolbar";
+import { BlockToolbar, MultiToolbar } from "@/components/board/block-toolbar";
 import {
   BLOCK_DEPTH,
   BLOCK_H,
@@ -20,13 +27,17 @@ import {
 } from "@/lib/whiteboard";
 import {
   applyMoves,
+  blocksInRect,
   findDrop,
   isDescendant,
   layoutAll,
   planDrop,
+  rectFromPoints,
+  topMostOf,
   type Drop,
   type Ground,
   type Move,
+  type Rect,
   type StackNode,
 } from "@/lib/stack-layout";
 import type { PeriodBlock, PeriodSummary } from "@/lib/services/periods";
@@ -42,6 +53,10 @@ import { isComposing } from "@/lib/utils";
  *   ・⌘/Ctrl + ホイール    → 拡大縮小
  *   ・⌘Z / ⇧⌘Z            → もどす / やり直す
  *   ・積み木の上/下/横へ寄せる → Scratchのようにくっつく(点線が出る)
+ *   ・何もない所をドラッグ → 範囲選択(囲んだ積み木をまとめて選ぶ)
+ *   ・スペース + ドラッグ / 中ボタン → 紙を動かす(パン)
+ *   ・⌥ドラッグ / ⌘C・⌘V     → 複製(⌥は掴んでいる最中から増えて見える)
+ *   ・Backspace / Delete      → 選んだ積み木を片づける
  *
  * ★積み木の座標は「地面に直置きしたものだけ」が持つ。上に載っている積み木の
  *   位置は、土台の座標と親子関係から毎回計算する(src/lib/stack-layout.ts)。
@@ -68,6 +83,7 @@ interface Cam {
 
 type Drag =
   | { kind: "pan"; startX: number; startY: number; camX: number; camY: number }
+  | { kind: "marquee"; from: { x: number; y: number } }
   | {
       kind: "block";
       id: string;
@@ -83,6 +99,10 @@ type Drag =
       moved: boolean;
       lastX: number;
       lastY: number;
+      /** ⌥を押しながら掴んだ = 離したところに複製する */
+      duplicate: boolean;
+      /** 一緒に動かす積み木(複数選択のとき)。掴んだ本人を含む。 */
+      movers: string[];
     };
 
 export function Whiteboard(props: {
@@ -128,10 +148,20 @@ function Board({
   const [drop, setDrop] = useState<Drop | null>(null);
   /** 掴んでいる積み木が、いま指についてきている位置(紙座標) */
   const [heldPos, setHeldPos] = useState<{ x: number; y: number } | null>(null);
+  /** いま ⌥ を押している = 元は置いたまま、複製が指についてくる */
+  const [duplicating, setDuplicating] = useState(false);
   /** 掴んだ積み木と、その上に載っている積み木ぜんぶ(まとめて動く) */
   const [heldTower, setHeldTower] = useState<Set<string>>(new Set());
-  /** 選んでいる積み木。右に道具箱が出る。 */
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** 選んでいる積み木。1つなら右に道具箱、2つ以上ならまとめて操作する道具箱が出る。 */
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  /** ドラッグ中の範囲選択の枠(紙座標)。null = 引いていない。 */
+  const [marquee, setMarquee] = useState<Rect | null>(null);
+  /** スペースを押している間はパン(Figmaと同じ) */
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  /** 最後にポインタがあった紙の座標。貼り付け先に使う。 */
+  const pointerRef = useRef({ x: 60, y: 60 });
+  /** ⌘C で控えた積み木 */
+  const clipboardRef = useRef<string[]>([]);
 
   /*
    * 盤の状態は「木(だれの上にだれが載っているか)」と
@@ -287,11 +317,21 @@ function Board({
   }, []);
 
   const onSurfacePointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0 || e.target !== e.currentTarget) return;
-    setSelectedId(null);
-    dragRef.current = { kind: "pan", startX: e.clientX, startY: e.clientY, camX: cam.x, camY: cam.y };
-    setPanning(true);
+    if (e.target !== e.currentTarget) return;
+    const wantsPan = e.button === 1 || spaceHeld;
+    if (e.button !== 0 && !wantsPan) return;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+
+    if (wantsPan) {
+      dragRef.current = { kind: "pan", startX: e.clientX, startY: e.clientY, camX: cam.x, camY: cam.y };
+      setPanning(true);
+      return;
+    }
+    // 何もない所からのドラッグ = 範囲選択
+    if (!e.shiftKey) setSelected(new Set());
+    const from = toPaper(e.clientX, e.clientY);
+    dragRef.current = { kind: "marquee", from };
+    setMarquee({ x: from.x, y: from.y, w: 0, h: 0 });
   };
 
   const onBlockPointerDown = (b: PeriodBlock) => (e: React.PointerEvent) => {
@@ -299,6 +339,21 @@ function Board({
     e.stopPropagation();
     const r = placed.get(b.id);
     if (!r) return;
+
+    // 選んでいないものを掴んだら、その積み木だけの選択に切り替える
+    // (選んでいるものを掴んだら、選択はそのまま = まとめて動かす)
+    let group = selected;
+    if (e.shiftKey) {
+      group = new Set(selected);
+      if (group.has(b.id)) group.delete(b.id);
+      else group.add(b.id);
+      setSelected(group);
+    } else if (!selected.has(b.id)) {
+      group = new Set([b.id]);
+      setSelected(group);
+    }
+
+    const movers = topMostOf(world.nodes, [...group].filter((id) => placed.has(id)));
     const paper = toPaper(e.clientX, e.clientY);
     dragRef.current = {
       kind: "block",
@@ -312,32 +367,58 @@ function Board({
       moved: false,
       lastX: r.x,
       lastY: r.y,
+      duplicate: e.altKey,
+      movers: movers.includes(b.id) ? movers : [b.id],
     };
     setDragId(b.id);
-    // 上に載っている積み木も一緒についてくる(塔ごと持ち上げる)
-    setHeldTower(new Set(world.nodes.filter((n) => isDescendant(world.nodes, b.id, n.id)).map((n) => n.id)));
+    setDuplicating(e.altKey);
+    // 動かす積み木と、その上に載っている積み木ぜんぶが一緒についてくる
+    const tower = new Set<string>();
+    for (const id of dragRef.current.movers) {
+      for (const n of world.nodes) if (isDescendant(world.nodes, id, n.id)) tower.add(n.id);
+    }
+    setHeldTower(tower);
     // ここで setPointerCapture はしない。捕まえると pointerup の宛先が紙に変わり、
     // タイトルなど中のボタンの click が発火しなくなる(紙は画面全体なので捕獲は不要)。
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
+    pointerRef.current = toPaper(e.clientX, e.clientY);
     const d = dragRef.current;
     if (!d) return;
+
+    if (d.kind === "marquee") {
+      const rect = rectFromPoints(d.from, pointerRef.current);
+      setMarquee(rect);
+      setSelected(new Set(blocksInRect(placed, rect, BLOCK_DEPTH)));
+      return;
+    }
+
     const dx = e.clientX - d.startX;
     const dy = e.clientY - d.startY;
     if (d.kind === "pan") {
       setCam((c) => ({ ...c, x: d.camX + dx, y: d.camY + dy }));
       return;
     }
+    // ⌥ は掴んでいる途中で押しても離してもよい(Figmaと同じ)
+    if (d.duplicate !== e.altKey) {
+      d.duplicate = e.altKey;
+      setDuplicating(e.altKey);
+    }
     if (Math.abs(dx) > 3 || Math.abs(dy) > 3) d.moved = true;
     if (!d.moved) return;
     d.lastX = snap(d.baseX + dx / cam.scale);
     d.lastY = snap(d.baseY + dy / cam.scale);
     setHeldPos({ x: d.lastX, y: d.lastY });
-    // 掴んでいる積み木の「頭の中心」がどこに近いかで、くっつき方が決まる
-    const width = placed.get(d.id)?.width ?? 240;
-    const centre = { x: d.lastX + width / 2, y: d.lastY + BLOCK_H / 2 };
-    setDrop(findDrop(centre, placed, world.nodes, d.id, { x: d.lastX, y: d.lastY }));
+    // くっつき先を探すのは「1つだけ動かしていて、複製でもない」ときだけ。
+    // まとめて動かしているときに1つだけ吸い付くと、位置関係が崩れる。
+    if (d.movers.length === 1 && !d.duplicate) {
+      const width = placed.get(d.id)?.width ?? 240;
+      const centre = { x: d.lastX + width / 2, y: d.lastY + BLOCK_H / 2 };
+      setDrop(findDrop(centre, placed, world.nodes, d.id, { x: d.lastX, y: d.lastY }));
+    } else {
+      setDrop({ kind: "free", x: d.lastX, y: d.lastY });
+    }
   };
 
   const onPointerUp = () => {
@@ -349,7 +430,40 @@ function Board({
     setDrop(null);
     setHeldPos(null);
     setHeldTower(new Set());
+    setDuplicating(false);
+    setMarquee(null);
     if (d?.kind !== "block" || !d.moved || !target) return;
+
+    const dx = d.lastX - d.baseX;
+    const dy = d.lastY - d.baseY;
+
+    // ⌥ を押しながら離した = そこに複製を置く(元の積み木は動かさない)
+    if (d.duplicate) {
+      duplicate(
+        d.movers.map((id) => {
+          const p = placed.get(id)!;
+          return { id, x: snap(p.x + dx), y: snap(p.y + dy) };
+        }),
+        "⌥ドラッグで複製した",
+      );
+      return;
+    }
+
+    // まとめて動かす: 選んだぶんだけ、同じ距離だけずらして紙に直置きする
+    if (d.movers.length > 1) {
+      const moves: Move[] = d.movers.map((id) => {
+        const p = placed.get(id)!;
+        return { id, parentId: null, sortOrder: 0, x: snap(p.x + dx), y: snap(p.y + dy) };
+      });
+      const before = snapshotOf(moves.map((m) => m.id));
+      commit(moves);
+      record({
+        label: `${moves.length}個の積み木を動かした`,
+        undo: () => commit(before),
+        redo: () => commit(moves),
+      });
+      return;
+    }
 
     const moves = planDrop(world.nodes, world.ground, target, d.id);
     if (moves.length === 0) return;
@@ -368,6 +482,77 @@ function Board({
       redo: () => commit(moves),
     });
   };
+
+  /** 複製して、そのまま選び直す(貼り付けた直後に動かせるように) */
+  const duplicate = useCallback(
+    (items: { id: string; x: number; y: number }[], label: string) => {
+      if (items.length === 0) return;
+      let made: string[] = [];
+      const make = async () => {
+        made = await duplicateBlocksAction(items);
+        setSelected(new Set(made));
+      };
+      start(async () => {
+        await make();
+        record({
+          label,
+          undo: async () => {
+            for (const id of made) await setBlockStatusAction(id, "dropped");
+            setSelected(new Set());
+          },
+          redo: make,
+        });
+      });
+    },
+    [start, record, setSelected],
+  );
+
+  /** ⌘C: いま選んでいる積み木を控える / ⌘V: ポインタの位置に貼る */
+  const copySelected = useCallback(() => {
+    const ids = topMostOf(world.nodes, [...selected].filter((id) => placed.has(id)));
+    if (ids.length === 0) return;
+    clipboardRef.current = ids;
+    toast(`${ids.length}個を控えました（⌘Vで貼り付け）`);
+  }, [selected, world.nodes, placed]);
+
+  const pasteClipboard = useCallback(() => {
+    const ids = clipboardRef.current.filter((id) => placed.has(id));
+    if (ids.length === 0) return;
+    // 控えたかたまりの左上を、いまのポインタ位置に合わせる(位置関係は保つ)
+    const rects = ids.map((id) => placed.get(id)!);
+    const left = Math.min(...rects.map((r) => r.x));
+    const top = Math.min(...rects.map((r) => r.y));
+    const at = pointerRef.current;
+    duplicate(
+      ids.map((id) => {
+        const r = placed.get(id)!;
+        return { id, x: snap(at.x + (r.x - left)), y: snap(at.y + (r.y - top)) };
+      }),
+      `${ids.length}個を貼り付けた`,
+    );
+  }, [placed, duplicate]);
+
+  /** 選んだ積み木をまとめて片づける(Backspace / Delete) */
+  const deleteSelected = useCallback(() => {
+    const targets = blocks.filter((b) => selected.has(b.id));
+    if (targets.length === 0) return;
+    const before = targets.map((b) => ({ id: b.id, status: b.status }));
+    const remove = () =>
+      start(async () => {
+        for (const b of before) await deleteBlockAction(b.id);
+      });
+    remove();
+    setSelected(new Set());
+    record({
+      label: targets.length === 1 ? `「${targets[0].title}」を片づけた` : `${targets.length}個を片づけた`,
+      undo: () =>
+        start(async () => {
+          for (const b of before) await setBlockStatusAction(b.id, b.status);
+          setSelected(new Set(before.map((b) => b.id)));
+        }),
+      redo: remove,
+    });
+  }, [blocks, selected, start, record, setSelected]);
 
   const createBlock = (title: string, at: { x: number; y: number }) => {
     // redo で作り直すと新しいIDになるので、いまのIDを覚えておいて差し替える
@@ -394,12 +579,49 @@ function Board({
   };
 
   useEffect(() => {
+    const typing = () => {
+      const el = document.activeElement;
+      return !!el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
+    };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSelectedId(null);
+      if (typing()) return;
+      if (e.key === "Escape") setSelected(new Set());
+      if (e.key === "Backspace" || e.key === "Delete") {
+        e.preventDefault();
+        deleteSelected();
+      }
+      if (e.code === "Space" && !e.repeat) {
+        e.preventDefault();
+        setSpaceHeld(true);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        copySelected();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v") {
+        e.preventDefault();
+        pasteClipboard();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        copySelected();
+        pasteClipboard();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        setSelected(new Set(blocks.map((b) => b.id)));
+      }
+    };
+    const onUp = (e: KeyboardEvent) => {
+      if (e.code === "Space") setSpaceHeld(false);
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+    window.addEventListener("keyup", onUp);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onUp);
+    };
+  }, [copySelected, pasteClipboard, deleteSelected, blocks]);
 
   const toggle = (id: string) =>
     setExpanded((s) => {
@@ -417,6 +639,7 @@ function Board({
         ref={surfaceRef}
         className="board-surface fixed inset-0 overflow-hidden bg-paper"
         data-panning={panning}
+        data-space={spaceHeld}
         data-testid="whiteboard"
         // 水玉は紙の模様。カメラと同じだけずらし、同じだけ伸び縮みさせる。
         style={{
@@ -455,7 +678,8 @@ function Board({
           {blocks.map((b) => {
             const p = placed.get(b.id);
             if (!p || b.workers.length === 0) return null;
-            const shift = heldTower.has(b.id) && heldPos ? dragShift : { x: 0, y: 0 };
+            const shift =
+              heldTower.has(b.id) && heldPos && !duplicating ? dragShift : { x: 0, y: 0 };
             const pad = 7 + (Math.min(b.workers.length, 3) - 1) * 6;
             return (
               <div
@@ -479,8 +703,9 @@ function Board({
             const p = placed.get(b.id);
             if (!p) return null;
             const held = dragId === b.id;
-            // 掴んだ積み木のズレを、上に載っている積み木にもそのまま足す
-            const rides = heldTower.has(b.id) && heldPos !== null;
+            // 掴んだ積み木のズレを、上に載っている積み木にもそのまま足す。
+            // ⌥(複製)のときは元を置いたままにして、増えるほうを別に描く。
+            const rides = heldTower.has(b.id) && heldPos !== null && !duplicating;
             return (
               <ToyBlock
                 key={b.id}
@@ -496,7 +721,15 @@ function Board({
                 currentMemberId={currentMemberId}
                 onToggleExpand={() => toggle(b.id)}
                 onPointerDown={onBlockPointerDown(b)}
-                onSelect={() => setSelectedId(b.id)}
+                onSelect={(additive) =>
+                  setSelected((cur) => {
+                    if (!additive) return new Set([b.id]);
+                    const next = new Set(cur);
+                    if (next.has(b.id)) next.delete(b.id);
+                    else next.add(b.id);
+                    return next;
+                  })
+                }
               />
             );
           })}
@@ -508,7 +741,8 @@ function Board({
           {blocks.map((b) => {
             const p = placed.get(b.id);
             if (!p) return null;
-            const shift = heldTower.has(b.id) && heldPos ? dragShift : { x: 0, y: 0 };
+            const shift =
+              heldTower.has(b.id) && heldPos && !duplicating ? dragShift : { x: 0, y: 0 };
             const x = p.x + shift.x;
             const y = p.y + shift.y;
             return (
@@ -572,7 +806,7 @@ function Board({
                   })}
 
                 {/* 選んでいる印 */}
-                {selectedId === b.id && (
+                {selected.has(b.id) && (
                   <span
                     className="absolute"
                     style={{
@@ -612,18 +846,114 @@ function Board({
             );
           })}
 
-          {/* 道具箱: 選んだ積み木の右に出る */}
+          {/*
+            ⌥ドラッグの複製プレビュー。
+            **離してから増えるのではなく、掴んでいる最中からもう1つ見えている**ようにする。
+            本物と同じ ToyBlock を描くので、置いたときの見た目とずれない。
+            触れないように pointer-events は殺してある。
+          */}
+          {duplicating &&
+            heldPos &&
+            blocks
+              .filter((b) => heldTower.has(b.id) && placed.has(b.id))
+              .map((b) => {
+                const p = placed.get(b.id)!;
+                return (
+                  <div key={`ghost-${b.id}`} className="pointer-events-none">
+                    <ToyBlock
+                      block={b}
+                      x={p.x + dragShift.x}
+                      y={p.y + dragShift.y}
+                      width={p.width}
+                      expanded={expanded.has(b.id)}
+                      dragging
+                      lifted={dragId === b.id}
+                      depth={p.depth}
+                      members={members}
+                      currentMemberId={currentMemberId}
+                      onToggleExpand={() => {}}
+                      onPointerDown={() => {}}
+                      onSelect={() => {}}
+                    />
+                  </div>
+                );
+              })}
+
+          {/* 複製中の合図 */}
+          {duplicating && heldPos && (
+            <div
+              className="brick pointer-events-none absolute grid size-6 place-items-center rounded-full bg-[var(--color-toy-purple)] text-[14px] font-bold leading-none text-white"
+              style={{
+                left: heldPos.x - 10,
+                top: heldPos.y - 10,
+                zIndex: 320,
+                "--depth-x": "0px",
+                "--depth-y": "2px",
+                "--depth-color": "#4a2fc4",
+              } as React.CSSProperties}
+              data-testid="duplicate-badge"
+            >
+              +
+            </div>
+          )}
+
+          {/* 範囲選択の枠 */}
+          {marquee && (
+            <div
+              className="pointer-events-none absolute rounded-[10px] border-2 border-dashed border-[var(--color-toy-purple)] bg-[rgba(108,75,244,0.08)]"
+              style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h, zIndex: 250 }}
+              data-testid="marquee"
+            />
+          )}
+
+          {/* 道具箱: 1つなら積み木の右、2つ以上ならまとめて操作する箱 */}
           {(() => {
-            const b = blocks.find((x) => x.id === selectedId);
-            const p = b ? placed.get(b.id) : null;
-            if (!b || !p) return null;
-            const shift = heldTower.has(b.id) && heldPos ? dragShift : { x: 0, y: 0 };
+            if (marquee || dragId || selected.size === 0) return null;
+            const chosen = blocks.filter((b) => selected.has(b.id) && placed.has(b.id));
+            if (chosen.length === 0) return null;
+            if (chosen.length === 1) {
+              const b = chosen[0];
+              const p = placed.get(b.id)!;
+              return (
+                <div
+                  className="absolute"
+                  style={{ left: p.x + p.width + 14, top: p.y - 4, zIndex: 300 }}
+                >
+                  <BlockToolbar
+                    block={b}
+                    currentMemberId={currentMemberId}
+                    periodEnd={period.end_date}
+                    onDuplicate={() =>
+                      duplicate([{ id: b.id, x: snap(p.x + 24), y: snap(p.y + 24) }], "積み木を複製した")
+                    }
+                  />
+                </div>
+              );
+            }
+
+            // まとめて選んでいるとき: かたまりの右上に出す
+            const rects = chosen.map((b) => {
+              const p = placed.get(b.id)!;
+              return { x: p.x, y: p.y, w: p.width };
+            });
+            const right = Math.max(...rects.map((r) => r.x + r.w));
+            const top = Math.min(...rects.map((r) => r.y));
             return (
-              <div
-                className="absolute"
-                style={{ left: p.x + shift.x + p.width + 14, top: p.y + shift.y - 4, zIndex: 300 }}
-              >
-                <BlockToolbar block={b} currentMemberId={currentMemberId} periodEnd={period.end_date} />
+              <div className="absolute" style={{ left: right + 14, top: top - 4, zIndex: 300 }}>
+                <MultiToolbar
+                  blocks={chosen}
+                  currentMemberId={currentMemberId}
+                  onDuplicate={() =>
+                    duplicate(
+                      topMostOf(world.nodes, chosen.map((b) => b.id)).map((id) => {
+                        const p = placed.get(id)!;
+                        return { id, x: snap(p.x + 24), y: snap(p.y + 24) };
+                      }),
+                      `${chosen.length}個を複製した`,
+                    )
+                  }
+                  onClear={() => setSelected(new Set())}
+                />
               </div>
             );
           })()}

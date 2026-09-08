@@ -106,25 +106,24 @@ function summarise(o: schema.ObjectiveRow, blockCount: number, t: string): Perio
 }
 
 /** その期間に属するマイルストーンID集合を引くための ws→obj 索引 */
-function workstreamIndex() {
-  const rows = getDb().select().from(schema.workstreams).all();
+async function workstreamIndex() {
+  const rows = await getDb().select().from(schema.workstreams);
   return new Map(rows.map((w) => [w.id, w]));
 }
 
 export async function listPeriods(): Promise<PeriodSummary[]> {
   const db = getDb();
   const t = today();
-  const wsIdx = workstreamIndex();
+  const wsIdx = await workstreamIndex();
   const counts = new Map<string, number>();
-  for (const m of db.select().from(schema.milestones).all()) {
+  for (const m of await db.select().from(schema.milestones)) {
     if (m.status === "dropped") continue;
     const objId = wsIdx.get(m.workstreamId)?.objectiveId;
     if (objId) counts.set(objId, (counts.get(objId) ?? 0) + 1);
   }
-  return db
+  return (await db
     .select()
-    .from(schema.objectives)
-    .all()
+    .from(schema.objectives))
     .filter((o) => o.status !== "archived")
     .sort(periodOrder)
     .map((o) => summarise(o, counts.get(o.id) ?? 0, t));
@@ -136,7 +135,7 @@ export async function defaultPeriodId(): Promise<string | null> {
   if (periods.length === 0) return null;
   const now = periods.find((p) => p.is_now);
   if (now) return now.id;
-  const ws = getDb().select().from(schema.workspace).get();
+  const ws = (await getDb().select().from(schema.workspace))[0];
   if (ws?.focusObjectiveId && periods.some((p) => p.id === ws.focusObjectiveId)) {
     return ws.focusObjectiveId;
   }
@@ -146,40 +145,36 @@ export async function defaultPeriodId(): Promise<string | null> {
 export async function getPeriodBoard(periodId: string): Promise<PeriodBoard | null> {
   const db = getDb();
   const t = today();
-  const o = db.select().from(schema.objectives).where(eq(schema.objectives.id, periodId)).get();
+  const o = (await db.select().from(schema.objectives).where(eq(schema.objectives.id, periodId)))[0];
   if (!o) return null;
 
-  const members = memberMap();
-  const wsRows = db
+  const members = await memberMap();
+  const wsRows = await db
     .select()
     .from(schema.workstreams)
-    .where(eq(schema.workstreams.objectiveId, periodId))
-    .all();
+    .where(eq(schema.workstreams.objectiveId, periodId));
   const wsIds = new Set(wsRows.map((w) => w.id));
   const wsOwner = new Map(wsRows.map((w) => [w.id, w.ownerId]));
 
-  const msRows = db
+  const msRows = (await db
     .select()
     .from(schema.milestones)
-    .orderBy(schema.milestones.sortOrder)
-    .all()
+    .orderBy(schema.milestones.sortOrder))
     .filter((m) => wsIds.has(m.workstreamId) && m.status !== "dropped");
 
-  const allTasks = db.select().from(schema.tasks).all();
+  const allTasks = await db.select().from(schema.tasks);
   const blockedTaskIds = new Set(
-    db
+    (await db
       .select()
       .from(schema.blockers)
-      .where(eq(schema.blockers.status, "active"))
-      .all()
+      .where(eq(schema.blockers.status, "active")))
       .map((b) => b.taskId)
       .filter(Boolean) as string[],
   );
-  const workerRows = db
+  const workerRows = await db
     .select()
     .from(schema.blockWorkers)
-    .orderBy(schema.blockWorkers.startedAt)
-    .all();
+    .orderBy(schema.blockWorkers.startedAt);
 
   const blocks: PeriodBlock[] = msRows.map((m) => {
     const subtasks: PeriodSubtask[] = allTasks
@@ -230,19 +225,18 @@ export async function getPeriodBoard(periodId: string): Promise<PeriodBoard | nu
  * ブロックはワークストリームにぶら下がる必要がある。画面には出さないので、
  * 期間ごとに1本だけ「メイン」を用意して使い回す。
  */
-export function ensureDefaultWorkstream(periodId: string, ownerId: string): string {
+export async function ensureDefaultWorkstream(periodId: string, ownerId: string): Promise<string> {
   const db = getDb();
-  const existing = db
+  const existing = (await db
     .select()
     .from(schema.workstreams)
-    .where(eq(schema.workstreams.objectiveId, periodId))
-    .all()
+    .where(eq(schema.workstreams.objectiveId, periodId)))
     .filter((w) => w.status === "active")
     .sort((a, b) => a.sortOrder - b.sortOrder);
   if (existing.length > 0) return existing[0].id;
   const id = newId("ws");
   const now = nowIso();
-  db.insert(schema.workstreams)
+  await db.insert(schema.workstreams)
     .values({
       id,
       objectiveId: periodId,
@@ -254,8 +248,7 @@ export function ensureDefaultWorkstream(periodId: string, ownerId: string): stri
       sortOrder: 0,
       createdAt: now,
       updatedAt: now,
-    })
-    .run();
+    });
   return id;
 }
 
@@ -266,12 +259,11 @@ export async function createPeriod(
   const db = getDb();
   const id = newId("obj");
   const now = nowIso();
-  const maxOrder = db
+  const maxOrder = (await db
     .select()
-    .from(schema.objectives)
-    .all()
+    .from(schema.objectives))
     .reduce((m, o) => Math.max(m, o.sortOrder), -1);
-  db.insert(schema.objectives)
+  await db.insert(schema.objectives)
     .values({
       id,
       title: input.title,
@@ -284,22 +276,20 @@ export async function createPeriod(
       sortOrder: maxOrder + 1,
       createdAt: now,
       updatedAt: now,
-    })
-    .run();
-  ensureDefaultWorkstream(id, input.owner_id);
-  logActivity(actor, "objective", id, "created", { after: input.title });
+    });
+  await ensureDefaultWorkstream(id, input.owner_id);
+  await logActivity(actor, "objective", id, "created", { after: input.title });
   return id;
 }
 
 export async function deletePeriod(periodId: string, actor: Actor): Promise<void> {
   const db = getDb();
-  const o = db.select().from(schema.objectives).where(eq(schema.objectives.id, periodId)).get();
+  const o = (await db.select().from(schema.objectives).where(eq(schema.objectives.id, periodId)))[0];
   if (!o) return;
-  db.update(schema.objectives)
+  await db.update(schema.objectives)
     .set({ status: "archived", updatedAt: nowIso() })
-    .where(eq(schema.objectives.id, periodId))
-    .run();
-  logActivity(actor, "objective", periodId, "status_changed", {
+    .where(eq(schema.objectives.id, periodId));
+  await logActivity(actor, "objective", periodId, "status_changed", {
     field: "status",
     before: o.status,
     after: "archived",
@@ -325,8 +315,8 @@ export interface WorkItem {
 export async function listWork(): Promise<WorkItem[]> {
   const db = getDb();
   const t = today();
-  const objById = new Map(db.select().from(schema.objectives).all().map((o) => [o.id, o]));
-  const wsById = new Map(db.select().from(schema.workstreams).all().map((w) => [w.id, w]));
+  const objById = new Map((await db.select().from(schema.objectives)).map((o) => [o.id, o]));
+  const wsById = new Map(await (await db.select().from(schema.workstreams)).map((w) => [w.id, w]));
   const wsOwner = new Map([...wsById.values()].map((w) => [w.id, w.ownerId]));
   const periodOf = (workstreamId: string | null) => {
     const w = workstreamId ? wsById.get(workstreamId) : undefined;
@@ -334,28 +324,25 @@ export async function listWork(): Promise<WorkItem[]> {
     return o && o.status !== "archived" ? { id: o.id, title: o.title } : null;
   };
 
-  const msRows = db
+  const msRows = (await db
     .select()
-    .from(schema.milestones)
-    .all()
+    .from(schema.milestones))
     .filter((m) => m.status !== "dropped");
   const msById = new Map(msRows.map((m) => [m.id, m]));
   const blockedTaskIds = new Set(
-    db
+    (await db
       .select()
       .from(schema.blockers)
-      .where(eq(schema.blockers.status, "active"))
-      .all()
+      .where(eq(schema.blockers.status, "active")))
       .map((b) => b.taskId)
       .filter(Boolean) as string[],
   );
-  const allTasks = db.select().from(schema.tasks).all().filter((x) => x.status !== "dropped");
-  const members = memberMap();
-  const workerRows = db
+  const allTasks = await (await db.select().from(schema.tasks)).filter((x) => x.status !== "dropped");
+  const members = await memberMap();
+  const workerRows = await db
     .select()
     .from(schema.blockWorkers)
-    .orderBy(schema.blockWorkers.startedAt)
-    .all();
+    .orderBy(schema.blockWorkers.startedAt);
 
   const blocks: WorkItem[] = msRows.map((m) => {
     const due = m.dueDate?.slice(0, 10) ?? null;
@@ -414,14 +401,13 @@ export interface BlockMove {
 export async function moveBlocks(moves: BlockMove[]): Promise<void> {
   const db = getDb();
   for (const m of moves.slice(0, 200)) {
-    db.update(schema.milestones)
+    await db.update(schema.milestones)
       .set({
         parentId: m.parent_id,
         sortOrder: m.sort_order,
         ...(m.x !== null && m.y !== null ? { boardX: m.x, boardY: m.y } : {}),
       })
-      .where(eq(schema.milestones.id, m.id))
-      .run();
+      .where(eq(schema.milestones.id, m.id));
   }
 }
 
@@ -437,23 +423,75 @@ export async function setWorkingOnBlock(
   actor: Actor,
 ): Promise<void> {
   const db = getDb();
-  const existing = db
+  const existing = (await db
     .select()
     .from(schema.blockWorkers)
-    .where(eq(schema.blockWorkers.milestoneId, blockId))
-    .all()
+    .where(eq(schema.blockWorkers.milestoneId, blockId)))
     .find((w) => w.memberId === memberId);
 
   if (working) {
     if (existing) return;
-    db.insert(schema.blockWorkers)
-      .values({ id: newId("bw"), milestoneId: blockId, memberId, startedAt: nowIso() })
-      .run();
+    await db.insert(schema.blockWorkers)
+      .values({ id: newId("bw"), milestoneId: blockId, memberId, startedAt: nowIso() });
   } else {
     if (!existing) return;
-    db.delete(schema.blockWorkers).where(eq(schema.blockWorkers.id, existing.id)).run();
+    await db.delete(schema.blockWorkers).where(eq(schema.blockWorkers.id, existing.id));
   }
-  logActivity(actor, "milestone", blockId, working ? "work_started" : "work_stopped", {
+  await logActivity(actor, "milestone", blockId, working ? "work_started" : "work_stopped", {
     after: memberId,
   });
+}
+
+/**
+ * 積み木の複製。サブタスクも一緒に複製する。
+ *
+ * 複製したものは**紙に直置き**(parent_id = null)で、渡された座標に置く。
+ * 塔の中のものを複製したときに、勝手に同じ塔へ入らないようにするため。
+ * 状態(できた/重要/期限/担当者)はそのまま写す — 「複製」は見たままの複製。
+ */
+export async function duplicateBlocks(
+  items: { id: string; x: number; y: number }[],
+  actor: Actor,
+): Promise<string[]> {
+  const db = getDb();
+  const now = nowIso();
+  const created: string[] = [];
+
+  for (const item of items.slice(0, 50)) {
+    const src = (
+      await db.select().from(schema.milestones).where(eq(schema.milestones.id, item.id))
+    )[0];
+    if (!src || src.status === "dropped") continue;
+
+    const id = newId("ms");
+    await db.insert(schema.milestones).values({
+      ...src,
+      id,
+      parentId: null,
+      sortOrder: 0,
+      boardX: item.x,
+      boardY: item.y,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const subs = (await db.select().from(schema.tasks)).filter(
+      (t) => t.milestoneId === src.id && t.status !== "dropped",
+    );
+    for (const t of subs) {
+      await db.insert(schema.tasks).values({
+        ...t,
+        id: newId("task"),
+        milestoneId: id,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    logActivity(actor, "milestone", id, "model_changed", {
+      note: `複製: ${src.title}`,
+    });
+    created.push(id);
+  }
+  return created;
 }

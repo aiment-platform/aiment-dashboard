@@ -184,10 +184,16 @@ body {
 
 /* ---- ボード ------------------------------------------------------------ */
 
-/* 空きスペースのドラッグ = 盤のパン */
+/*
+ * 何もない所のドラッグ = 範囲選択(十字)。
+ * スペースを押している間だけ「掴む手」= 紙を動かす(Figmaと同じ)。
+ */
 .board-surface {
-  cursor: grab;
+  cursor: crosshair;
   touch-action: none;
+}
+.board-surface[data-space="true"] {
+  cursor: grab;
 }
 .board-surface[data-panning="true"] {
   cursor: grabbing;

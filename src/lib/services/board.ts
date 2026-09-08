@@ -6,9 +6,8 @@ import { getDb, schema } from "@/lib/db";
  * (「誰がどこに置いたか」は履歴に値しない)。
  */
 export async function moveMilestoneOnBoard(id: string, x: number, y: number): Promise<void> {
-  getDb()
+  await getDb()
     .update(schema.milestones)
     .set({ boardX: x, boardY: y })
-    .where(eq(schema.milestones.id, id))
-    .run();
+    .where(eq(schema.milestones.id, id));
 }

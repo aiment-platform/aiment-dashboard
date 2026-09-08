@@ -115,3 +115,52 @@ aiment_Dashboard/
 | Version history | activity_log covers it |
 
 Biggest product risk isn't schema — it's `next_action` and `health` rotting from manual upkeep; staleness timestamps are the schema-level hook the UX must exploit.
+
+---
+
+# 追補 — Vercel へ (2026-09-07)
+
+## SQLite → Postgres
+
+Vercel は箱を立てて捨てる作りなので、ファイル(`data/aiment.db`)は使えない。
+**書いても消え、2人が同時に開くと別のデータを見る。**
+
+| | 前 | 後 |
+|---|---|---|
+| DB | better-sqlite3(ファイル) | Postgres(`postgres` + `drizzle-orm/postgres-js`) |
+| 呼び出し | 同期 `.all()` / `.get()` / `.run()` | 非同期 `await` **123箇所** |
+| マイグレーション | 起動のたびに `migrate()` | `npm run db:migrate`(デプロイ時に1回) |
+| 接続 | 都度open | `globalThis` に載せて使い回し、`max: 1` / `prepare: false` |
+
+`prepare: false` は必須。Neon/Supabase の接続プーラ(pgbouncer)は
+プリペアドステートメントを跨いで使えない。
+
+**スキーマは無傷で移せた。** 「text / integer / real しか使わない」という
+最初の決まりのおかげで、`sqliteTable → pgTable`、`real → doublePrecision` の
+機械的な置換だけで済んだ。真偽値が 0/1 の integer なのも同じ理由。
+
+`.all()/.get()/.run()` の変換は正規表現でやったが、**チェーンの後ろに配列メソッドが
+続くもの**(`....all().filter(...)`)は `(await ...)` で括り直す必要があり、
+そこだけ別のパスで処理した。付け忘れは全部 tsc が拾う。
+
+## ログインは置かない (2026-09-07 変更)
+
+一度 Auth.js + Google + 許可リストまで作ったが、**2人しか使わない**ので外した。
+代わりに責任を2つに割った。
+
+| | どこが受け持つか |
+|---|---|
+| 誰が開けるか | **Vercel の Deployment Protection**(許可メールアドレス)。アプリは関知しない |
+| 誰として書くか | `src/lib/accounts.ts` の3アカウント(Soya / Futo / Other)から選ぶ。Cookie 1個 |
+
+- **IDと色を手で固定**した(`mem_soya` / `mem_futo` / `mem_other`)。
+  IDをハッシュして色を決めていた頃は、人数が少ないと**2人が同じ色になることがあった**。
+  「色=人」が崩れるので、決まった3人は色も直接書く
+- `src/middleware.ts` は認証をしない。**未選択なら `/who` へ送るだけ**
+- `ensureBaseRows()` がワークスペース1行とアカウント3行を用意する(マイグレーション時に1回)
+- E2E は Cookie を直接入れて「Soyaとして」始める
+
+**外したもの:** `next-auth`、`src/auth.ts`、`/login`、`/api/auth/*`、`members.email`、
+`AddMember`(メンバーは増えない)、`AUTH_*` の環境変数。
+
+**残した割り切り:** Vercel の保護を切ると全開放になる。アプリ側に第二の鍵は無い。

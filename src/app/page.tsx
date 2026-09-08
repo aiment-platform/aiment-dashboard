@@ -33,7 +33,7 @@ export default async function BoardPage({
         members={active}
         currentMemberId={me?.id ?? ""}
       />
-      <BoardDock members={active} currentId={me?.id ?? ""} />
+      <BoardDock name={me?.name ?? null} id={me?.id ?? null} />
     </>
   );
 }

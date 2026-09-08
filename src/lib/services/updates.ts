@@ -24,11 +24,11 @@ export interface UpdateDto {
   } | null;
 }
 
-function composeUpdates(rows: (typeof schema.updates.$inferSelect)[]): UpdateDto[] {
+async function composeUpdates(rows: (typeof schema.updates.$inferSelect)[]): Promise<UpdateDto[]> {
   const db = getDb();
-  const members = memberMap();
-  const wsNames = new Map(db.select().from(schema.workstreams).all().map((w) => [w.id, w.name]));
-  const msMap = new Map(db.select().from(schema.milestones).all().map((m) => [m.id, m]));
+  const members = await memberMap();
+  const wsNames = new Map((await db.select().from(schema.workstreams)).map((w) => [w.id, w.name]));
+  const msMap = new Map((await db.select().from(schema.milestones)).map((m) => [m.id, m]));
   return rows.map((u) => {
     const ms = u.milestoneId ? msMap.get(u.milestoneId) : undefined;
     const hasChange =
@@ -60,15 +60,15 @@ export async function getRecentUpdates(
   const db = getDb();
   const limit = opts.limit ?? 10;
   const rows = opts.workstream_id
-    ? db
+    ? await db
         .select()
         .from(schema.updates)
         .where(eq(schema.updates.workstreamId, opts.workstream_id))
         .orderBy(desc(schema.updates.createdAt))
         .limit(limit)
-        .all()
-    : db.select().from(schema.updates).orderBy(desc(schema.updates.createdAt)).limit(limit).all();
-  return composeUpdates(rows);
+        
+    : await db.select().from(schema.updates).orderBy(desc(schema.updates.createdAt)).limit(limit);
+  return await composeUpdates(rows);
 }
 
 export interface AddUpdateInput {
@@ -92,11 +92,11 @@ export interface AddUpdateInput {
 export async function addUpdate(input: AddUpdateInput, actor: Actor): Promise<string> {
   if (!input.what.trim()) throw new Error("'what' is required");
   const db = getDb();
-  const ws = db
+  const ws = (await db
     .select()
     .from(schema.workstreams)
     .where(eq(schema.workstreams.id, input.workstream_id))
-    .get();
+    )[0];
   if (!ws) throw new Error(`workstream not found: ${input.workstream_id}`);
 
   let valueBefore: number | null = null;
@@ -110,7 +110,7 @@ export async function addUpdate(input: AddUpdateInput, actor: Actor): Promise<st
   }
 
   const id = newId("upd");
-  db.insert(schema.updates)
+  await db.insert(schema.updates)
     .values({
       id,
       workstreamId: input.workstream_id,
@@ -122,9 +122,8 @@ export async function addUpdate(input: AddUpdateInput, actor: Actor): Promise<st
       valueBefore,
       valueAfter,
       createdAt: nowIso(),
-    })
-    .run();
-  logActivity(actor, "update", id, "created", { note: input.what.trim() });
+    });
+  await logActivity(actor, "update", id, "created", { note: input.what.trim() });
 
   if (input.blocker?.title?.trim()) {
     await createBlocker(

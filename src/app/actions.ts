@@ -1,9 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { cookies } from "next/headers";
 import { z } from "zod";
-import { getActor, MEMBER_COOKIE } from "@/lib/current-member";
+import { getActor } from "@/lib/current-member";
 import { CONFIDENCE, HEALTH, TASK_PRIORITY, TASK_STATUS } from "@/lib/constants";
 import * as objectives from "@/lib/services/objectives";
 import * as workstreams from "@/lib/services/workstreams";
@@ -11,7 +10,6 @@ import * as milestones from "@/lib/services/milestones";
 import * as tasks from "@/lib/services/tasks";
 import * as blockers from "@/lib/services/blockers";
 import * as updates from "@/lib/services/updates";
-import * as members from "@/lib/services/members";
 
 /**
  * Server Actions are 3-line wrappers: validate → call service → revalidate.
@@ -20,12 +18,6 @@ import * as members from "@/lib/services/members";
 
 function refresh() {
   revalidatePath("/", "layout");
-}
-
-export async function switchMemberAction(memberId: string) {
-  const jar = await cookies();
-  jar.set(MEMBER_COOKIE, memberId, { maxAge: 60 * 60 * 24 * 365, path: "/" });
-  refresh();
 }
 
 // ---- the two golden inputs -------------------------------------------------
@@ -284,13 +276,6 @@ export async function setConfidenceAction(objectiveId: string, confidence: strin
   refresh();
 }
 
-// ---- members ---------------------------------------------------------------
-
-export async function createMemberAction(name: string, role?: string) {
-  if (!name.trim()) throw new Error("name required");
-  await members.createMember({ name: name.trim(), role: role?.trim() || null }, await getActor());
-  refresh();
-}
 
 // ---- 積み木ボード (期間 / ブロック / サブタスク) ---------------------------
 /*
@@ -350,7 +335,7 @@ export async function createBlockAction(input: z.infer<typeof blockSchema>) {
   const p = blockSchema.parse(input);
   const actor = await getActor();
   const { ensureDefaultWorkstream } = await import("@/lib/services/periods");
-  const workstreamId = ensureDefaultWorkstream(p.period_id, actor.id ?? "");
+  const workstreamId = await ensureDefaultWorkstream(p.period_id, actor.id ?? "");
   const id = await milestones.createMilestone(
     {
       workstream_id: workstreamId,
@@ -405,7 +390,7 @@ export async function stackBlocksAction(moves: z.infer<typeof blockMoveSchema>) 
 export async function toggleBlockDoneAction(id: string, done: boolean) {
   const { updateMilestoneProgress } = await import("@/lib/services/milestones");
   const { getDb, schema: s } = await import("@/lib/db");
-  const row = getDb().select().from(s.milestones).all().find((m) => m.id === id);
+  const row = (await getDb().select().from(s.milestones)).find((m) => m.id === id);
   if (!row) throw new Error(`block not found: ${id}`);
   await updateMilestoneProgress(id, done ? row.targetValue : 0, await getActor(), {
     skip_update_row: true,
@@ -425,6 +410,18 @@ export async function setWorkingOnBlockAction(
   const { setWorkingOnBlock } = await import("@/lib/services/periods");
   await setWorkingOnBlock(blockId, who, working, actor);
   refresh();
+}
+
+/** 積み木の複製(サブタスクごと)。座標は呼び出し側が決める。 */
+const duplicateSchema = z.array(
+  z.object({ id: z.string().min(1), x: z.number(), y: z.number() }),
+);
+
+export async function duplicateBlocksAction(items: z.infer<typeof duplicateSchema>) {
+  const { duplicateBlocks } = await import("@/lib/services/periods");
+  const ids = await duplicateBlocks(duplicateSchema.parse(items), await getActor());
+  refresh();
+  return ids;
 }
 
 export async function deleteBlockAction(id: string) {

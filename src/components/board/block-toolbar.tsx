@@ -40,11 +40,13 @@ export function BlockToolbar({
   block,
   currentMemberId,
   periodEnd,
+  onDuplicate,
 }: {
   block: PeriodBlock;
   currentMemberId: string;
   /** 「この期間のおわり」を期限の候補に出すため */
   periodEnd: string | null;
+  onDuplicate: () => void;
 }) {
   const [, start] = useTransition();
   const { record } = useHistory();
@@ -202,6 +204,21 @@ export function BlockToolbar({
         </svg>
       </button>
 
+      {/* 複製 */}
+      <button
+        type="button"
+        onClick={onDuplicate}
+        className={BTN}
+        aria-label="この積み木を複製する"
+        title="複製 (⌘D / ⌥ドラッグ)"
+        data-testid="block-duplicate"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="9" y="9" width="12" height="12" rx="2.5" />
+          <path d="M6 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V6" />
+        </svg>
+      </button>
+
       <span className="mx-0.5 h-5 w-px bg-border" />
 
       {/* できた */}
@@ -242,6 +259,157 @@ export function BlockToolbar({
         aria-label="この積み木を片づける"
         title="この積み木を片づける"
         data-testid="block-delete"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round">
+          <path d="M6 6l12 12M18 6L6 18" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+
+/**
+ * まとめて選んでいるときの道具箱。
+ * 「全部できたにする」「全部重要にする」のように、選んだぶんへ同じことをする。
+ * 期限や担当者のように1つずつ決めたいものは、ここには出さない。
+ */
+export function MultiToolbar({
+  blocks,
+  currentMemberId,
+  onDuplicate,
+  onClear,
+}: {
+  blocks: PeriodBlock[];
+  currentMemberId: string;
+  onDuplicate: () => void;
+  onClear: () => void;
+}) {
+  const [, start] = useTransition();
+  const { record } = useHistory();
+
+  const allDone = blocks.every((b) => b.status === "achieved");
+  const allImportant = blocks.every((b) => b.important);
+  const allWorking = blocks.every((b) => b.workers.some((w) => w.id === currentMemberId));
+
+  const each = (fn: (b: PeriodBlock) => Promise<void>) =>
+    start(async () => {
+      for (const b of blocks) await fn(b);
+    });
+
+  const setDone = (v: boolean) => each((b) => toggleBlockDoneAction(b.id, v));
+  const setFlag = (v: boolean) => each((b) => updateBlockAction(b.id, { important: v }));
+  const setWorking = (v: boolean) =>
+    each((b) => setWorkingOnBlockAction(b.id, v, currentMemberId || undefined));
+
+  return (
+    <div
+      className="brick flex items-center gap-0.5 rounded-[13px] border-2 border-[rgba(20,22,28,0.12)] bg-white p-1"
+      style={{ "--depth-x": "0px", "--depth-y": "4px", "--depth-color": "rgba(20,22,28,0.18)" } as React.CSSProperties}
+      onPointerDown={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+      data-testid="multi-toolbar"
+    >
+      <span className="num px-1.5 text-[12px] font-bold text-muted-foreground">{blocks.length}個</span>
+      <span className="mx-0.5 h-5 w-px bg-border" />
+
+      <button
+        type="button"
+        onClick={() => {
+          const next = !allWorking;
+          setWorking(next);
+          record({
+            label: next ? `${blocks.length}個に取り組みはじめた` : "取り組みをやめた",
+            undo: () => setWorking(!next),
+            redo: () => setWorking(next),
+          });
+        }}
+        className={cn(BTN, allWorking && "bg-[var(--color-toy-purple-soft)] text-[var(--color-toy-purple)]")}
+        aria-label="まとめて取り組む"
+        title="まとめて「これに取り組む」"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill={allWorking ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="8" r="3.6" />
+          <path d="M5 20c0-3.6 3.1-5.6 7-5.6s7 2 7 5.6" />
+        </svg>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          const next = !allImportant;
+          setFlag(next);
+          record({
+            label: next ? `${blocks.length}個を重要にした` : "重要をはずした",
+            undo: () => setFlag(!next),
+            redo: () => setFlag(next),
+          });
+        }}
+        className={cn(BTN, allImportant && "text-[var(--color-brick-hot-ink)]")}
+        aria-label="まとめて重要にする"
+        title="まとめて重要にする"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill={allImportant ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 21V4.5C7 2.5 11 6.5 14 4.5c2 -1.3 4 -1 6 0v9c-2 -1 -4 -1.3 -6 0C11 15.5 7 11.5 4 13.5" />
+        </svg>
+      </button>
+
+      <button
+        type="button"
+        onClick={onDuplicate}
+        className={BTN}
+        aria-label="まとめて複製する"
+        title="まとめて複製 (⌘D / ⌥ドラッグ)"
+        data-testid="multi-duplicate"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="9" y="9" width="12" height="12" rx="2.5" />
+          <path d="M6 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V6" />
+        </svg>
+      </button>
+
+      <span className="mx-0.5 h-5 w-px bg-border" />
+
+      <button
+        type="button"
+        onClick={() => {
+          const next = !allDone;
+          setDone(next);
+          record({
+            label: `${blocks.length}個を${next ? "できたにした" : "やり直しにした"}`,
+            undo: () => setDone(!next),
+            redo: () => setDone(next),
+          });
+        }}
+        className={cn(BTN, allDone && "text-[var(--color-brick-done-ink)]")}
+        aria-label="まとめてできたにする"
+        title="まとめてできたにする"
+        data-testid="multi-done"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M20 6L9 17l-5-5" />
+        </svg>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          const before = blocks.map((b) => ({ id: b.id, status: b.status }));
+          each((b) => deleteBlockAction(b.id));
+          onClear();
+          record({
+            label: `${blocks.length}個を片づけた`,
+            undo: () =>
+              start(async () => {
+                for (const b of before) await setBlockStatusAction(b.id, b.status);
+              }),
+            redo: () => each((b) => deleteBlockAction(b.id)),
+          });
+        }}
+        className={cn(BTN, "hover:text-destructive")}
+        aria-label="まとめて片づける"
+        title="まとめて片づける"
+        data-testid="multi-delete"
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round">
           <path d="M6 6l12 12M18 6L6 18" />

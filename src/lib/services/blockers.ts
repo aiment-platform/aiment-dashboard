@@ -26,7 +26,7 @@ export interface BlockerDto {
 function toDto(
   b: typeof schema.blockers.$inferSelect,
   wsNames: Map<string, string>,
-  members: ReturnType<typeof memberMap>,
+  members: Awaited<ReturnType<typeof memberMap>>,
 ): BlockerDto {
   return {
     id: b.id,
@@ -47,13 +47,12 @@ function toDto(
 /** Active blockers sorted oldest-first — age is the sort key, not severity. */
 export async function getBlockers(status: "active" | "resolved" = "active"): Promise<BlockerDto[]> {
   const db = getDb();
-  const members = memberMap();
-  const wsNames = new Map(db.select().from(schema.workstreams).all().map((w) => [w.id, w.name]));
-  return db
-    .select()
-    .from(schema.blockers)
-    .where(eq(schema.blockers.status, status))
-    .all()
+  const members = await memberMap();
+  const wsNames = new Map(
+    (await db.select().from(schema.workstreams)).map((w) => [w.id, w.name] as const),
+  );
+  const rows = await db.select().from(schema.blockers).where(eq(schema.blockers.status, status));
+  return rows
     .map((b) => toDto(b, wsNames, members))
     .sort((a, b) =>
       status === "active"
@@ -81,14 +80,12 @@ export async function createBlocker(
     throw new Error(`invalid severity: ${input.severity}`);
   }
   const db = getDb();
-  const ws = db
-    .select()
-    .from(schema.workstreams)
-    .where(eq(schema.workstreams.id, input.workstream_id))
-    .get();
+  const ws = (
+    await db.select().from(schema.workstreams).where(eq(schema.workstreams.id, input.workstream_id))
+  )[0];
   if (!ws) throw new Error(`workstream not found: ${input.workstream_id}`);
   const id = newId("blk");
-  db.insert(schema.blockers)
+  await db.insert(schema.blockers)
     .values({
       id,
       title: input.title,
@@ -99,9 +96,8 @@ export async function createBlocker(
       severity: input.severity ?? "high",
       status: "active",
       createdAt: nowIso(),
-    })
-    .run();
-  logActivity(actor, "blocker", id, "created", { after: input.title });
+    });
+  await logActivity(actor, "blocker", id, "created", { after: input.title });
   return id;
 }
 
@@ -109,11 +105,10 @@ export async function createBlocker(
 export async function resolveBlocker(id: string, resolution: string, actor: Actor): Promise<void> {
   if (!resolution.trim()) throw new Error("resolution is required — how was it unblocked?");
   const db = getDb();
-  const b = db.select().from(schema.blockers).where(eq(schema.blockers.id, id)).get();
+  const b = (await db.select().from(schema.blockers).where(eq(schema.blockers.id, id)))[0];
   if (!b) throw new Error(`blocker not found: ${id}`);
-  db.update(schema.blockers)
+  await db.update(schema.blockers)
     .set({ status: "resolved", resolution: resolution.trim(), resolvedAt: nowIso() })
-    .where(eq(schema.blockers.id, id))
-    .run();
-  logActivity(actor, "blocker", id, "resolved", { note: resolution.trim() });
+    .where(eq(schema.blockers.id, id));
+  await logActivity(actor, "blocker", id, "resolved", { note: resolution.trim() });
 }

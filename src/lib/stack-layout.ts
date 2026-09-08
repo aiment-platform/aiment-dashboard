@@ -350,3 +350,56 @@ export function applyMoves(
 
 /** 積み木ひとつぶんの最小幅(持ち手を含む) */
 export const MIN_BLOCK_W = HANDLE_W + 180;
+
+// ---- 範囲選択 ---------------------------------------------------------------
+
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** 2点から矩形を作る(どちらの角から引いても正しい向きになる) */
+export function rectFromPoints(a: Point, b: Point): Rect {
+  return {
+    x: Math.min(a.x, b.x),
+    y: Math.min(a.y, b.y),
+    w: Math.abs(a.x - b.x),
+    h: Math.abs(a.y - b.y),
+  };
+}
+
+/** 重なっているか(1pxでも触れていれば選ぶ — 囲みきらなくてよい) */
+export function rectsOverlap(a: Rect, b: Rect): boolean {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+/** 範囲に触れている積み木のID。厚み(影)まで含めた見た目の大きさで判定する。 */
+export function blocksInRect(placed: Map<string, Placed>, rect: Rect, blockDepth = 0): string[] {
+  const hit: string[] = [];
+  for (const p of placed.values()) {
+    if (rectsOverlap(rect, { x: p.x, y: p.y, w: p.width, h: BLOCK_H + blockDepth })) hit.push(p.id);
+  }
+  return hit;
+}
+
+/**
+ * まとめて動かすときに「実際に動かす積み木」だけを残す。
+ * 選んだ中に土台とその上の積み木が両方いるなら、上の積み木は土台について動くので外す
+ * (二重に動かすと位置がずれる)。
+ */
+export function topMostOf(nodes: StackNode[], ids: string[]): string[] {
+  const set = new Set(ids);
+  return ids.filter((id) => {
+    let cur = nodes.find((n) => n.id === id)?.parentId ?? null;
+    const seen = new Set<string>();
+    while (cur) {
+      if (set.has(cur)) return false; // 親も選ばれている → 親について動く
+      if (seen.has(cur)) break;
+      seen.add(cur);
+      cur = nodes.find((n) => n.id === cur)?.parentId ?? null;
+    }
+    return true;
+  });
+}

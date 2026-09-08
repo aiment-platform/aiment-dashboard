@@ -1,3 +1,5 @@
+import { ACCOUNTS } from "./accounts";
+
 /**
  * ホワイトボード「積み木」の純関数まとめ。
  * DOM も React も触らないので、ここだけ単体テストで固められる
@@ -33,11 +35,17 @@ export const MEMBER_COLORS = [
   "#f2703a", // orange
 ] as const;
 
-/** メンバーIDから色を決める。同じIDなら毎回同じ色(DBに色を持たせない)。 */
+/**
+ * メンバーIDから色を決める。
+ * 決まった3アカウントは src/lib/accounts.ts で色を手で決めてあるので、
+ * 「たまたま2人が同じ色になる」ことがない。それ以外はIDから計算する。
+ */
 export function memberColor(memberId: string | null | undefined): string {
   if (!memberId) return "#c9c9c9";
+  const fixed = ACCOUNTS.find((a) => a.id === memberId);
+  if (fixed) return fixed.color;
   let h = 0;
-  for (let i = 0; i < memberId.length; i++) h = (h * 31 + memberId.charCodeAt(i)) >>> 0;
+  for (let i = 0; i < memberId.length; i++) h = (h * 31 + memberId.charCodeAt(i)) >> 0;
   return MEMBER_COLORS[h % MEMBER_COLORS.length];
 }
 

@@ -1,1 +1,0 @@
-ALTER TABLE `milestones` ADD `important` integer DEFAULT 0 NOT NULL;

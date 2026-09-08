@@ -45,8 +45,8 @@ export interface ObjectiveDetail {
 
 const CONF_RANK: Record<Confidence, number> = { low: 0, medium: 1, high: 2 };
 
-export function confidenceTrend(objectiveId: string): "up" | "down" | "flat" | null {
-  const rows = getDb()
+export async function confidenceTrend(objectiveId: string): Promise<"up" | "down" | "flat" | null> {
+  const rows = await getDb()
     .select()
     .from(schema.activityLog)
     .where(
@@ -57,8 +57,7 @@ export function confidenceTrend(objectiveId: string): "up" | "down" | "flat" | n
       ),
     )
     .orderBy(desc(schema.activityLog.ts))
-    .limit(1)
-    .all();
+    .limit(1);
   if (rows.length === 0) return null;
   const detail = parseActivityRow(rows[0]).detail;
   const before = detail?.before as Confidence | undefined;
@@ -70,13 +69,13 @@ export function confidenceTrend(objectiveId: string): "up" | "down" | "flat" | n
 
 export async function listObjectives(): Promise<ObjectiveListItem[]> {
   const db = getDb();
-  const ws = db.select().from(schema.workspace).get();
-  return db
+  const ws = (await db.select().from(schema.workspace))[0];
+  return (await db
     .select()
     .from(schema.objectives)
     .orderBy(desc(schema.objectives.createdAt))
-    .all()
-    .map((o) => ({
+    
+    ).map((o) => ({
       id: o.id,
       title: o.title,
       status: o.status,
@@ -87,25 +86,24 @@ export async function listObjectives(): Promise<ObjectiveListItem[]> {
 
 export async function getObjective(id: string): Promise<ObjectiveDetail | null> {
   const db = getDb();
-  const o = db.select().from(schema.objectives).where(eq(schema.objectives.id, id)).get();
+  const o = (await db.select().from(schema.objectives).where(eq(schema.objectives.id, id)))[0];
   if (!o) return null;
-  const members = memberMap();
-  const wsRows = db
+  const members = await memberMap();
+  const wsRows = await db
     .select()
     .from(schema.workstreams)
     .where(eq(schema.workstreams.objectiveId, id))
-    .orderBy(schema.workstreams.sortOrder)
-    .all();
+    .orderBy(schema.workstreams.sortOrder);
   const wsIds = new Set(wsRows.map((w) => w.id));
-  const msRows = db
+  const msRows = (await db
     .select()
     .from(schema.milestones)
     .orderBy(schema.milestones.sortOrder)
-    .all()
-    .filter((m) => wsIds.has(m.workstreamId));
+    
+    ).filter((m) => wsIds.has(m.workstreamId));
   const wsNames = new Map(wsRows.map((w) => [w.id, w.name]));
 
-  const history: ConfidenceChange[] = db
+  const history: ConfidenceChange[] = (await db
     .select()
     .from(schema.activityLog)
     .where(
@@ -116,8 +114,8 @@ export async function getObjective(id: string): Promise<ObjectiveDetail | null> 
       ),
     )
     .orderBy(desc(schema.activityLog.ts))
-    .all()
-    .map((r) => {
+    
+    ).map((r) => {
       const e = parseActivityRow(r);
       return {
         ts: e.ts,
@@ -144,7 +142,7 @@ export async function getObjective(id: string): Promise<ObjectiveDetail | null> 
     confidence_note: o.confidenceNote,
     confidence_updated_at: o.confidenceUpdatedAt,
     confidence_reviewed_days_ago: daysSince(o.confidenceUpdatedAt),
-    confidence_trend: confidenceTrend(id),
+    confidence_trend: await confidenceTrend(id),
     workstreams: wsRows.map((w) => ({
       id: w.id,
       name: w.name,
@@ -173,7 +171,7 @@ export async function createObjective(
   const db = getDb();
   const id = newId("obj");
   const now = nowIso();
-  db.insert(schema.objectives)
+  await db.insert(schema.objectives)
     .values({
       id,
       title: input.title,
@@ -185,11 +183,10 @@ export async function createObjective(
       confidence: "medium",
       createdAt: now,
       updatedAt: now,
-    })
-    .run();
-  logActivity(actor, "objective", id, "created", { after: input.title });
+    });
+  await logActivity(actor, "objective", id, "created", { after: input.title });
   // First objective automatically becomes the focus.
-  const ws = db.select().from(schema.workspace).get();
+  const ws = (await db.select().from(schema.workspace))[0];
   if (ws && !ws.focusObjectiveId) {
     await setFocus(id, actor);
   }
@@ -209,12 +206,12 @@ export async function updateObjective(
   actor: Actor,
 ): Promise<void> {
   const db = getDb();
-  const before = db.select().from(schema.objectives).where(eq(schema.objectives.id, id)).get();
+  const before = (await db.select().from(schema.objectives).where(eq(schema.objectives.id, id)))[0];
   if (!before) throw new Error(`objective not found: ${id}`);
   if (patch.status && !(OBJECTIVE_STATUS as readonly string[]).includes(patch.status)) {
     throw new Error(`invalid objective status: ${patch.status}`);
   }
-  db.update(schema.objectives)
+  await db.update(schema.objectives)
     .set({
       ...(patch.title !== undefined && { title: patch.title }),
       ...(patch.description !== undefined && { description: patch.description }),
@@ -224,17 +221,16 @@ export async function updateObjective(
       ...(patch.status !== undefined && { status: patch.status }),
       updatedAt: nowIso(),
     })
-    .where(eq(schema.objectives.id, id))
-    .run();
+    .where(eq(schema.objectives.id, id));
   if (patch.status && patch.status !== before.status) {
-    logActivity(actor, "objective", id, "status_changed", {
+    await logActivity(actor, "objective", id, "status_changed", {
       field: "status",
       before: before.status,
       after: patch.status,
     });
   }
   if (patch.target_date !== undefined && patch.target_date !== before.targetDate) {
-    logActivity(actor, "objective", id, "target_date_changed", {
+    await logActivity(actor, "objective", id, "target_date_changed", {
       field: "target_date",
       before: before.targetDate,
       after: patch.target_date,
@@ -258,14 +254,13 @@ export async function setConfidence(
   }
   if (!note.trim()) throw new Error("confidence changes require a one-line reason");
   const db = getDb();
-  const before = db.select().from(schema.objectives).where(eq(schema.objectives.id, id)).get();
+  const before = (await db.select().from(schema.objectives).where(eq(schema.objectives.id, id)))[0];
   if (!before) throw new Error(`objective not found: ${id}`);
   const now = nowIso();
-  db.update(schema.objectives)
+  await db.update(schema.objectives)
     .set({ confidence, confidenceNote: note.trim(), confidenceUpdatedAt: now, updatedAt: now })
-    .where(eq(schema.objectives.id, id))
-    .run();
-  logActivity(actor, "objective", id, "confidence_changed", {
+    .where(eq(schema.objectives.id, id));
+  await logActivity(actor, "objective", id, "confidence_changed", {
     field: "confidence",
     before: before.confidence,
     after: confidence,
@@ -275,15 +270,14 @@ export async function setConfidence(
 
 export async function setFocus(objectiveId: string, actor: Actor): Promise<void> {
   const db = getDb();
-  const o = db
+  const o = (await db
     .select()
     .from(schema.objectives)
     .where(eq(schema.objectives.id, objectiveId))
-    .get();
+    )[0];
   if (!o) throw new Error(`objective not found: ${objectiveId}`);
-  db.update(schema.workspace)
+  await db.update(schema.workspace)
     .set({ focusObjectiveId: objectiveId })
-    .where(eq(schema.workspace.id, "workspace"))
-    .run();
-  logActivity(actor, "workspace", "workspace", "focus_changed", { after: objectiveId });
+    .where(eq(schema.workspace.id, "workspace"));
+  await logActivity(actor, "workspace", "workspace", "focus_changed", { after: objectiveId });
 }

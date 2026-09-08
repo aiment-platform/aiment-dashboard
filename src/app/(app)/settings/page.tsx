@@ -2,7 +2,6 @@ import Link from "next/link";
 import { listMembers } from "@/lib/services/members";
 import { listPeriods } from "@/lib/services/periods";
 import { MemberSquare } from "@/components/member-square";
-import { AddMember } from "@/components/settings/add-member";
 import { periodRangeLabel } from "@/lib/whiteboard";
 
 /** 設定 — メンバー(=色)と期間の一覧、それとエージェント向けの入口。 */
@@ -29,11 +28,14 @@ export default async function SettingsPage() {
               </li>
             ))}
           </ul>
-          <div className="mt-3">
-            <AddMember />
-          </div>
           <p className="mt-2.5 text-[11px] leading-4 text-muted-foreground">
-            四角の色はIDから決まるので、あとから変わりません。積み木の担当者アイコンもこの色です。
+            使うのは <strong className="font-bold">Soya / Futo / Other</strong> の3アカウントだけです
+            （<span className="num">src/lib/accounts.ts</span> に直接書いてあります）。
+            四角の色も3人で必ず違うように手で決めてあるので、あとから変わりません。
+            <br />
+            画面の左上を押すと、書き手をいつでも切り替えられます。
+            <strong className="font-bold">誰がこのページを開けるかは Vercel 側の許可メールアドレス</strong>
+            が決めます（アプリ側にログインはありません）。
           </p>
         </div>
       </section>

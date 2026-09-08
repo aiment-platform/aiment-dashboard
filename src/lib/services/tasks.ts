@@ -36,16 +36,15 @@ function isOverdue(dueDate: string | null, status: string): boolean {
   return dueDate.slice(0, 10) < new Date().toISOString().slice(0, 10);
 }
 
-function composeTasks(rows: (typeof schema.tasks.$inferSelect)[]): TaskDto[] {
+async function composeTasks(rows: (typeof schema.tasks.$inferSelect)[]): Promise<TaskDto[]> {
   const db = getDb();
-  const members = memberMap();
-  const wsMap = new Map(db.select().from(schema.workstreams).all().map((w) => [w.id, w]));
-  const msMap = new Map(db.select().from(schema.milestones).all().map((m) => [m.id, m]));
-  const activeBlockers = db
+  const members = await memberMap();
+  const wsMap = new Map((await db.select().from(schema.workstreams)).map((w) => [w.id, w]));
+  const msMap = new Map((await db.select().from(schema.milestones)).map((m) => [m.id, m]));
+  const activeBlockers = await db
     .select()
     .from(schema.blockers)
-    .where(eq(schema.blockers.status, "active"))
-    .all();
+    .where(eq(schema.blockers.status, "active"));
   return rows.map((t) => {
     const ws = t.workstreamId ? wsMap.get(t.workstreamId) : undefined;
     const ms = t.milestoneId ? msMap.get(t.milestoneId) : undefined;
@@ -96,24 +95,24 @@ export async function listTasks(
   filter: { owner_id?: string; status?: string; workstream_id?: string; milestone_id?: string } = {},
 ): Promise<TaskDto[]> {
   const db = getDb();
-  let rows = db.select().from(schema.tasks).all();
+  let rows = await db.select().from(schema.tasks);
   if (filter.owner_id) rows = rows.filter((t) => t.ownerId === filter.owner_id);
   if (filter.status) rows = rows.filter((t) => t.status === filter.status);
   if (filter.workstream_id) rows = rows.filter((t) => t.workstreamId === filter.workstream_id);
   if (filter.milestone_id) rows = rows.filter((t) => t.milestoneId === filter.milestone_id);
-  return composeTasks(rows).sort(taskOrder);
+  return (await composeTasks(rows)).sort(taskOrder);
 }
 
 /** Open tasks for one member, pre-sorted; the dashboard shows the top 3. */
 export async function getMyTasks(memberId: string): Promise<TaskDto[]> {
   const db = getDb();
-  const rows = db
+  const rows = (await db
     .select()
     .from(schema.tasks)
     .where(eq(schema.tasks.ownerId, memberId))
-    .all()
-    .filter((t) => t.status === "todo" || t.status === "in_progress");
-  return composeTasks(rows).sort(taskOrder);
+    
+    ).filter((t) => t.status === "todo" || t.status === "in_progress");
+  return (await composeTasks(rows)).sort(taskOrder);
 }
 
 export async function createTask(
@@ -135,16 +134,16 @@ export async function createTask(
   let workstreamId = input.workstream_id ?? null;
   // Workstream is inferred from the milestone — one less field to fill.
   if (!workstreamId && input.milestone_id) {
-    const ms = db
+    const ms = (await db
       .select()
       .from(schema.milestones)
       .where(eq(schema.milestones.id, input.milestone_id))
-      .get();
+      )[0];
     workstreamId = ms?.workstreamId ?? null;
   }
   const id = newId("task");
   const now = nowIso();
-  db.insert(schema.tasks)
+  await db.insert(schema.tasks)
     .values({
       id,
       title: input.title,
@@ -157,9 +156,8 @@ export async function createTask(
       note: input.note ?? null,
       createdAt: now,
       updatedAt: now,
-    })
-    .run();
-  logActivity(actor, "task", id, "created", { after: input.title });
+    });
+  await logActivity(actor, "task", id, "created", { after: input.title });
   return id;
 }
 
@@ -185,10 +183,10 @@ export async function updateTask(
     throw new Error(`invalid priority: ${patch.priority}`);
   }
   const db = getDb();
-  const t = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
+  const t = (await db.select().from(schema.tasks).where(eq(schema.tasks.id, id)))[0];
   if (!t) throw new Error(`task not found: ${id}`);
   const now = nowIso();
-  db.update(schema.tasks)
+  await db.update(schema.tasks)
     .set({
       ...(patch.title !== undefined && { title: patch.title }),
       ...(patch.status !== undefined && {
@@ -204,10 +202,9 @@ export async function updateTask(
       ...(patch.sort_order !== undefined && { sortOrder: patch.sort_order }),
       updatedAt: now,
     })
-    .where(eq(schema.tasks.id, id))
-    .run();
+    .where(eq(schema.tasks.id, id));
   if (patch.status && patch.status !== t.status) {
-    logActivity(actor, "task", id, "status_changed", {
+    await logActivity(actor, "task", id, "status_changed", {
       field: "status",
       before: t.status,
       after: patch.status,

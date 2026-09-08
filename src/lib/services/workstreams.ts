@@ -36,7 +36,7 @@ function composeWorkstream(
   w: typeof schema.workstreams.$inferSelect,
   milestones: (typeof schema.milestones.$inferSelect)[],
   activeBlockerCount: number,
-  members: ReturnType<typeof memberMap>,
+  members: Awaited<ReturnType<typeof memberMap>>,
 ): WorkstreamDto {
   const own = milestones
     .filter((m) => m.workstreamId === w.id && m.status !== "dropped")
@@ -67,15 +67,14 @@ function composeWorkstream(
 
 export async function listWorkstreams(objectiveId?: string): Promise<WorkstreamDto[]> {
   const db = getDb();
-  const members = memberMap();
-  let rows = db.select().from(schema.workstreams).orderBy(schema.workstreams.sortOrder).all();
+  const members = await memberMap();
+  let rows = await db.select().from(schema.workstreams).orderBy(schema.workstreams.sortOrder);
   if (objectiveId) rows = rows.filter((w) => w.objectiveId === objectiveId);
-  const milestones = db.select().from(schema.milestones).all();
-  const blockers = db
+  const milestones = await db.select().from(schema.milestones);
+  const blockers = await db
     .select()
     .from(schema.blockers)
-    .where(eq(schema.blockers.status, "active"))
-    .all();
+    .where(eq(schema.blockers.status, "active"));
   return rows.map((w) =>
     composeWorkstream(
       w,
@@ -97,15 +96,14 @@ export interface WorkstreamDetail {
 
 export async function getWorkstreamDetail(id: string): Promise<WorkstreamDetail | null> {
   const db = getDb();
-  const w = db.select().from(schema.workstreams).where(eq(schema.workstreams.id, id)).get();
+  const w = (await db.select().from(schema.workstreams).where(eq(schema.workstreams.id, id)))[0];
   if (!w) return null;
-  const members = memberMap();
-  const milestones = db
+  const members = await memberMap();
+  const milestones = await db
     .select()
     .from(schema.milestones)
     .where(eq(schema.milestones.workstreamId, id))
-    .orderBy(schema.milestones.sortOrder)
-    .all();
+    .orderBy(schema.milestones.sortOrder);
   const active = (await getBlockers("active")).filter((b) => b.workstream.id === id);
   const resolved = (await getBlockers("resolved")).filter((b) => b.workstream.id === id).slice(0, 5);
   return {
@@ -136,7 +134,7 @@ export async function createWorkstream(
   const db = getDb();
   const id = newId("ws");
   const now = nowIso();
-  db.insert(schema.workstreams)
+  await db.insert(schema.workstreams)
     .values({
       id,
       objectiveId: input.objective_id,
@@ -149,9 +147,8 @@ export async function createWorkstream(
       sortOrder: input.sort_order ?? 0,
       createdAt: now,
       updatedAt: now,
-    })
-    .run();
-  logActivity(actor, "workstream", id, "created", { after: input.name });
+    });
+  await logActivity(actor, "workstream", id, "created", { after: input.name });
   return id;
 }
 
@@ -161,9 +158,9 @@ export async function updateWorkstream(
   actor: Actor,
 ): Promise<void> {
   const db = getDb();
-  const w = db.select().from(schema.workstreams).where(eq(schema.workstreams.id, id)).get();
+  const w = (await db.select().from(schema.workstreams).where(eq(schema.workstreams.id, id)))[0];
   if (!w) throw new Error(`workstream not found: ${id}`);
-  db.update(schema.workstreams)
+  await db.update(schema.workstreams)
     .set({
       ...(patch.name !== undefined && { name: patch.name }),
       ...(patch.owner_id !== undefined && { ownerId: patch.owner_id }),
@@ -171,10 +168,9 @@ export async function updateWorkstream(
       ...(patch.sort_order !== undefined && { sortOrder: patch.sort_order }),
       updatedAt: nowIso(),
     })
-    .where(eq(schema.workstreams.id, id))
-    .run();
+    .where(eq(schema.workstreams.id, id));
   if (patch.status && patch.status !== w.status) {
-    logActivity(actor, "workstream", id, "status_changed", {
+    await logActivity(actor, "workstream", id, "status_changed", {
       field: "status",
       before: w.status,
       after: patch.status,
@@ -200,14 +196,13 @@ export async function updateHealth(
     throw new Error("at_risk / off_track require a one-line reason");
   }
   const db = getDb();
-  const w = db.select().from(schema.workstreams).where(eq(schema.workstreams.id, id)).get();
+  const w = (await db.select().from(schema.workstreams).where(eq(schema.workstreams.id, id)))[0];
   if (!w) throw new Error(`workstream not found: ${id}`);
   const now = nowIso();
-  db.update(schema.workstreams)
+  await db.update(schema.workstreams)
     .set({ health, healthNote: note?.trim() || null, healthUpdatedAt: now, updatedAt: now })
-    .where(eq(schema.workstreams.id, id))
-    .run();
-  logActivity(actor, "workstream", id, health === w.health ? "health_reviewed" : "health_changed", {
+    .where(eq(schema.workstreams.id, id));
+  await logActivity(actor, "workstream", id, health === w.health ? "health_reviewed" : "health_changed", {
     field: "health",
     before: w.health,
     after: health,
@@ -218,13 +213,12 @@ export async function updateHealth(
 /** One manually-curated line: what should happen next in this workstream. */
 export async function setNextAction(id: string, nextAction: string | null, actor: Actor): Promise<void> {
   const db = getDb();
-  const w = db.select().from(schema.workstreams).where(eq(schema.workstreams.id, id)).get();
+  const w = (await db.select().from(schema.workstreams).where(eq(schema.workstreams.id, id)))[0];
   if (!w) throw new Error(`workstream not found: ${id}`);
-  db.update(schema.workstreams)
+  await db.update(schema.workstreams)
     .set({ nextAction: nextAction?.trim() || null, updatedAt: nowIso() })
-    .where(eq(schema.workstreams.id, id))
-    .run();
-  logActivity(actor, "workstream", id, "next_action_changed", {
+    .where(eq(schema.workstreams.id, id));
+  await logActivity(actor, "workstream", id, "next_action_changed", {
     field: "next_action",
     before: w.nextAction,
     after: nextAction,

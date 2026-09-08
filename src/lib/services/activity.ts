@@ -22,14 +22,14 @@ export interface ActivityDetail {
   note?: string;
 }
 
-export function logActivity(
+export async function logActivity(
   actor: Actor,
   entityType: string,
   entityId: string,
   action: string,
   detail?: ActivityDetail,
-): void {
-  getDb()
+): Promise<void> {
+  await getDb()
     .insert(schema.activityLog)
     .values({
       id: newId("act"),
@@ -40,8 +40,7 @@ export function logActivity(
       entityId,
       action,
       detail: detail ? JSON.stringify(detail) : null,
-    })
-    .run();
+    });
 }
 
 export interface ActivityEntry {
