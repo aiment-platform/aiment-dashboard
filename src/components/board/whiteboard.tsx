@@ -14,7 +14,7 @@ import { PeriodPill } from "@/components/board/period-pill";
 import { HistoryDock, HistoryProvider, useHistory } from "@/components/board/history";
 import { BlockToolbar, MultiToolbar } from "@/components/board/block-toolbar";
 import { BoardRoom } from "@/components/board/realtime";
-import { RealtimeBridge } from "@/components/board/realtime-bridge";
+import { RealtimeBridge, RealtimeCursors } from "@/components/board/realtime-bridge";
 import {
   BLOCK_DEPTH,
   BLOCK_H,
@@ -1073,9 +1073,7 @@ function Board({
           )}
 
           {/* 相手のカーソル。紙の中に置くので、拡大しても位置がずれない */}
-          {realtime && (
-            <RealtimeBridge pending={writing} onReady={attachCursor} />
-          )}
+          {realtime && <RealtimeCursors />}
 
           {/* 範囲選択の枠 */}
           {marquee && (
@@ -1193,6 +1191,9 @@ function Board({
           リアルタイムを繋ぐと、Liveblocks の無料プランの印が右下に出る。
           そのままだと拡大縮小のボタンに重なって押せなくなるので、上に逃がす。
         */}
+        {/* 画面の角に貼るもの。紙の変形の外に置かないと、角に固定できない */}
+        {realtime && <RealtimeBridge pending={writing} onReady={attachCursor} />}
+
         <div
           className={cn(
             "absolute right-6 flex items-center gap-1.5",

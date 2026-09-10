@@ -91,23 +91,24 @@ export function OtherCursors() {
             data-testid="other-cursor"
             data-name={info?.name ?? ""}
           >
-            <svg width="20" height="24" viewBox="0 0 20 24" fill="none" aria-hidden>
+            {/* 白フチを太めに。紙の上でも積み木の上でも埋もれないように */}
+            <svg width="28" height="34" viewBox="0 0 28 34" fill="none" aria-hidden>
               <path
-                d="M3 2.5l12.5 8.2-5.9 1.1-2.4 5.6L3 2.5z"
+                d="M4 2.5l17.5 11.6-8.3 1.6-3.3 7.9L4 2.5z"
                 fill={color}
                 stroke="#fff"
-                strokeWidth="1.6"
+                strokeWidth="2.6"
                 strokeLinejoin="round"
               />
             </svg>
             <span
-              className="brick absolute left-[15px] top-[17px] whitespace-nowrap rounded-[7px] px-1.5 py-0.5 text-[11px] font-bold text-white"
+              className="brick absolute left-[19px] top-[22px] whitespace-nowrap rounded-[9px] px-2 py-[3px] text-[12px] font-bold text-white"
               style={
                 {
                   background: color,
                   "--depth-x": "0px",
-                  "--depth-y": "2px",
-                  "--depth-color": `color-mix(in srgb, ${color} 70%, #000)`,
+                  "--depth-y": "3px",
+                  "--depth-color": `color-mix(in srgb, ${color} 68%, #000)`,
                 } as React.CSSProperties
               }
             >
@@ -117,6 +118,52 @@ export function OtherCursors() {
         );
       })}
     </>
+  );
+}
+
+/**
+ * いま同じ盤を開いている人。左上に出す。
+ *
+ * カーソルは**相手がマウスを動かすまで出ない**ので、それだけだと
+ * 「相手が居るのに何も見えない」状態になり、繋がっているのか分からない。
+ * ここは開いた時点で出るので、「居る」ことがひと目で分かる。
+ */
+export function PresenceChips() {
+  const others = useOthers();
+  if (others.length === 0) return null;
+  return (
+    <div className="fixed left-6 top-[64px] z-40 flex items-center gap-1.5" data-testid="presence">
+      {others.map(({ connectionId, info, presence }) => {
+        const color = info?.color ?? "#6c4bf4";
+        return (
+          <span
+            key={connectionId}
+            className="brick flex h-7 items-center gap-1.5 rounded-[9px] bg-white pl-1 pr-2"
+            style={
+              {
+                "--depth-x": "0px",
+                "--depth-y": "3px",
+                "--depth-color": "rgba(20,22,28,0.18)",
+              } as React.CSSProperties
+            }
+            title={presence.cursor ? "この盤を見ています" : "開いていますが、まだ動かしていません"}
+          >
+            <span
+              className="grid size-5 place-items-center rounded-[6px] text-[11px] font-bold text-white"
+              style={{ background: color }}
+            >
+              {(info?.name ?? "?").slice(0, 1)}
+            </span>
+            <span className="text-[11.5px] font-bold">{info?.name ?? "だれか"}</span>
+            {/* まだ動かしていない人は薄い点。動かした人は色つきの点 */}
+            <span
+              className="size-[7px] rounded-full"
+              style={{ background: presence.cursor ? color : "rgba(20,22,28,0.18)" }}
+            />
+          </span>
+        );
+      })}
+    </div>
   );
 }
 
