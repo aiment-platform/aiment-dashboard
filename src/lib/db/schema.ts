@@ -5,7 +5,7 @@ import { pgTable, text, integer, doublePrecision, index } from "drizzle-orm/pg-c
  * - Postgres. 型は text / integer / double precision の3つだけ —
  *   SQLite で始めたときからこの制約を守っていたので、移行は機械的に済んだ。
  * - Dates are ISO-8601 TEXT (UTC). Enums are TEXT validated against src/lib/constants.ts.
- * - IDs are prefixed nanoids (obj_, ws_, ms_, task_, blk_, upd_, mem_, act_, bw_).
+ * - IDs are prefixed nanoids (obj_, ws_, ms_, task_, blk_, upd_, mem_, act_, bw_, ct_).
  * - 真偽値は 0/1 の integer。DBの型を増やさないため(SQLite 時代からの決まりを踏襲)。
  * - Progress is NEVER stored: only milestone current/target/weight are; % is derived at read time.
  */
@@ -190,3 +190,28 @@ export type TaskRow = typeof tasks.$inferSelect;
 export type BlockerRow = typeof blockers.$inferSelect;
 export type UpdateRow = typeof updates.$inferSelect;
 export type ActivityRow = typeof activityLog.$inferSelect;
+
+/**
+ * 連絡先 — 協力してくれるユーザーさん・VTuberさんの名簿。
+ * 積み木(仕事)とは別の軸で、「誰に声をかけて、いまどの段階か」を持つ。
+ * 連絡手段は列に分けてある(検索・リンク化しやすい)。空なら null。
+ */
+export const contacts = pgTable(
+  "contacts",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    kind: text("kind").notNull().default("user"), // CONTACT_KIND
+    status: text("status").notNull().default("candidate"), // CONTACT_STATUS
+    handle: text("handle"), // X(Twitter) の @なしID
+    discord: text("discord"),
+    email: text("email"),
+    url: text("url"), // YouTube など、その人のページ
+    note: text("note"),
+    ownerId: text("owner_id"), // 担当するメンバー
+    lastContactedAt: text("last_contacted_at"), // 最後に連絡した日(YYYY-MM-DD)
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (t) => [index("ct_status_idx").on(t.status), index("ct_kind_idx").on(t.kind)],
+);

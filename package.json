@@ -13,7 +13,8 @@
     "mcp": "tsx mcp/server.ts",
     "e2e:board": "node e2e/board.e2e.mjs",
     "db:migrate": "tsx src/scripts/migrate.ts",
-    "vercel-build": "npm run db:migrate && next build"
+    "vercel-build": "npm run db:migrate && next build",
+    "e2e:contacts": "node e2e/contacts.e2e.mjs"
   },
   "dependencies": {
     "@liveblocks/client": "^3.24.1",

@@ -59,3 +59,18 @@ export const CONFIDENCE_MEANING: Record<Confidence, string> = {
  */
 export const MILESTONE_RULE =
   "マイルストーンは「外の世界の反応」— ユーザーが回答した、VTuberが契約した、お金が動いた。自分たちの作業だけで完了できるなら、それはタスク。";
+
+/** 連絡先の種類: 協力ユーザー / VTuber / その他 */
+export const CONTACT_KIND = ["user", "vtuber", "other"] as const;
+export type ContactKind = (typeof CONTACT_KIND)[number];
+
+/**
+ * 声かけの段階。左から右へ進む前提。
+ *   candidate: まだ声をかけていない候補
+ *   contacted: DM等を送った
+ *   waiting  : 返事待ち(相手のボール)
+ *   active   : 協力してくれている
+ *   passed   : 見送り(断られた / こちらから見送った)
+ */
+export const CONTACT_STATUS = ["candidate", "contacted", "waiting", "active", "passed"] as const;
+export type ContactStatus = (typeof CONTACT_STATUS)[number];

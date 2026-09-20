@@ -31,6 +31,9 @@ export function BoardDock({ name, id }: { name: string | null; id: string | null
       <Link href="/tasks" className={chip} style={depth}>
         一覧
       </Link>
+      <Link href="/contacts" className={chip} style={depth}>
+        連絡先
+      </Link>
       <Link href="/settings" className={`${chip} !w-8 !px-0`} style={depth} aria-label="設定">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
           <circle cx="12" cy="12" r="3.2" />

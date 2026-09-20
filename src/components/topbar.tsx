@@ -23,6 +23,9 @@ export async function Topbar() {
       <Link href="/tasks" className={chip} style={depth}>
         一覧
       </Link>
+      <Link href="/contacts" className={chip} style={depth}>
+        連絡先
+      </Link>
       <Link href="/settings" className={chip} style={depth}>
         設定
       </Link>

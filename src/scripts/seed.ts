@@ -52,6 +52,7 @@ async function main() {
   await db.delete(schema.workstreams);
   await db.delete(schema.objectives);
   await db.delete(schema.members);
+  await db.delete(schema.contacts);
 
   // ---- メンバー = 決まった3アカウント(src/lib/accounts.ts が正) ----------------
   const [soya, futo, other] = ACCOUNTS.map((a) => a.id);
@@ -243,9 +244,40 @@ async function main() {
 
   await db.update(schema.workspace).set({ focusObjectiveId: now.id });
 
+  // ---- 連絡先(協力してくれる人の名簿) ------------------------------------------
+  const ct = (
+    name: string,
+    kind: "user" | "vtuber" | "other",
+    status: "candidate" | "contacted" | "waiting" | "active" | "passed",
+    extra: Partial<typeof schema.contacts.$inferInsert> = {},
+  ) => ({
+    id: newId("ct"),
+    name,
+    kind,
+    status,
+    handle: null,
+    discord: null,
+    email: null,
+    url: null,
+    note: null,
+    ownerId: soya,
+    lastContactedAt: null,
+    createdAt: ago(20),
+    updatedAt: ago(1),
+    ...extra,
+  });
+  await db.insert(schema.contacts).values([
+    ct("星野ルナ", "vtuber", "active", { handle: "hoshino_luna", note: "登録者3万人。初回セッションに出てくれた", lastContactedAt: day(-2) }),
+    ct("ねこみみチャンネル", "vtuber", "waiting", { handle: "nekomimi_ch", note: "コラボに前向き。9/20 に返事の予定", lastContactedAt: day(-5) }),
+    ct("田中さん", "user", "active", { discord: "tanaka#0421", note: "Discord のテスター1号。フィードバックが具体的", ownerId: futo }),
+    ct("鈴木さん", "user", "contacted", { email: "suzuki@example.com", lastContactedAt: day(-1), ownerId: futo }),
+    ct("VTuber事務所 A", "other", "candidate", { url: "https://example.com", note: "まだ声をかけていない。窓口を探す" }),
+    ct("山田さん", "user", "passed", { note: "時間が取れないとのこと。落ち着いたら再度" }),
+  ]);
+
   console.log("seeded:");
   console.log(`  期間 3件 (${past.title} / ${now.title} / ${next.title})`);
-  console.log(`  積み木 ${msOrder}件 / サブタスク ${taskOrder}件 / メンバー 3人`);
+  console.log(`  積み木 ${msOrder}件 / サブタスク ${taskOrder}件 / メンバー 3人 / 連絡先 6人`);
 
 
   await getSql().end();

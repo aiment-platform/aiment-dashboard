@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getActor } from "@/lib/current-member";
-import { CONFIDENCE, HEALTH, TASK_PRIORITY, TASK_STATUS } from "@/lib/constants";
+import { CONFIDENCE, CONTACT_KIND, CONTACT_STATUS, HEALTH, TASK_PRIORITY, TASK_STATUS } from "@/lib/constants";
 import * as objectives from "@/lib/services/objectives";
 import * as workstreams from "@/lib/services/workstreams";
 import * as milestones from "@/lib/services/milestones";
@@ -521,5 +521,39 @@ export async function updateSubtaskAction(
 
 export async function deleteSubtaskAction(taskId: string) {
   await tasks.updateTask(taskId, { status: "dropped" }, await getActor());
+  refresh();
+}
+
+// ---- 連絡先 ------------------------------------------------------------------
+
+const contactSchema = z.object({
+  name: z.string().min(1).max(120),
+  kind: z.enum(CONTACT_KIND).optional(),
+  status: z.enum(CONTACT_STATUS).optional(),
+  handle: z.string().max(120).nullable().optional(),
+  discord: z.string().max(120).nullable().optional(),
+  email: z.string().max(200).nullable().optional(),
+  url: z.string().max(500).nullable().optional(),
+  note: z.string().max(4000).nullable().optional(),
+  owner_id: z.string().nullable().optional(),
+  last_contacted_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+});
+
+export async function createContactAction(input: z.infer<typeof contactSchema>) {
+  const { createContact } = await import("@/lib/services/contacts");
+  const id = await createContact(contactSchema.parse(input), await getActor());
+  refresh();
+  return id;
+}
+
+export async function updateContactAction(id: string, patch: Partial<z.infer<typeof contactSchema>>) {
+  const { updateContact } = await import("@/lib/services/contacts");
+  await updateContact(id, contactSchema.partial().parse(patch), await getActor());
+  refresh();
+}
+
+export async function deleteContactAction(id: string) {
+  const { deleteContact } = await import("@/lib/services/contacts");
+  await deleteContact(id, await getActor());
   refresh();
 }
