@@ -135,8 +135,16 @@ function newGhost(
     subtasks: [],
     done_subtasks: 0,
     created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   };
 }
+
+/**
+ * 一時メモリの1件。
+ *   seq       … いつの記録か(同じ積み木を続けて動かしたとき、古い回の後片づけで新しい記録を消さないため)
+ *   writtenAt … DB に書けた時刻(サーバーが返す updated_at)。まだ書いている途中なら null
+ */
+type OverlayEntry = Move & { seq: number; writtenAt: string | null };
 
 /** 一時メモリの中の仮IDを本物のIDに付け替える(置いた直後に動かした分を失わないため) */
 function rekey<T extends Move>(prev: Map<string, T>, swap: Map<string, string>): Map<string, T> {
@@ -199,7 +207,7 @@ function Board({
    * いまは**積み木ごとに**覚えておき、それぞれ DB が追いついた時点で1つずつ忘れる。
    * seq は「いつの記録か」の番号。古い書き込みの後片づけが新しい記録を消さないために使う。
    */
-  const [overlay, setOverlay] = useState<Map<string, Move & { seq: number }>>(new Map());
+  const [overlay, setOverlay] = useState<Map<string, OverlayEntry>>(new Map());
   const seqRef = useRef(0);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [draft, setDraft] = useState<{ x: number; y: number } | null>(null);
@@ -310,19 +318,31 @@ function Board({
   }, [blocks, expanded]);
 
   /** 届いたデータが移動を反映していたら、その上書きはもう要らない */
-  /** 一時メモリのうち、DBがまだ追いついていないものだけ(追いついたものは描画では無視する) */
+  /**
+   * 一時メモリのうち、まだ画面に重ねる必要があるものだけ。
+   *
+   * 捨てる(=DB の値をそのまま描く)のは次のどちらかのときだけ。**時間では捨てない。**
+   *   1. 届いたデータが、動かした位置と一致した(DB が追いついた)
+   *   2. 届いたデータが、自分が書いたより**後の**別の書き込みを示している(相方が動かした)
+   * 以前は「書けてから5秒で捨てる」だったが、遠い DB ではその間にデータが届かず、
+   * 捨てた瞬間だけ古い位置が描かれていた(本番で約7秒後に一瞬戻る症状)。
+   */
   const livePending = useMemo(() => {
     const serverById = new Map(serverBlocks.map((b) => [b.id, b]));
     const live: Move[] = [];
     for (const m of overlay.values()) {
       const b = serverById.get(m.id);
-      const caughtUp =
-        b !== undefined &&
-        b.parent_id === m.parentId &&
-        b.sort_order === m.sortOrder &&
-        (b.x ?? null) === (m.x ?? null) &&
-        (b.y ?? null) === (m.y ?? null);
-      if (!caughtUp) live.push(m);
+      if (b) {
+        // 上に載っている積み木は座標を持たない(親から計算する)ので、座標は比べない
+        const samePlace =
+          b.parent_id === m.parentId &&
+          b.sort_order === m.sortOrder &&
+          (m.x === null || b.x === m.x) &&
+          (m.y === null || b.y === m.y);
+        if (samePlace) continue;
+        if (m.writtenAt && b.updated_at > m.writtenAt) continue; // 自分より後に誰かが書いた
+      }
+      live.push(m);
     }
     return live.length ? live : null;
   }, [overlay, serverBlocks]);
@@ -412,13 +432,14 @@ function Board({
       // 1. 一時メモリに書く(積み木ごと。前の記録は、同じ積み木のものだけ新しいものに置きかわる)
       setOverlay((prev) => {
         const next = new Map(prev);
-        for (const m of moves) next.set(m.id, { ...m, seq });
+        for (const m of moves) next.set(m.id, { ...m, seq, writtenAt: null });
         return next;
       });
       // 2. DB へ。返事を待たずに画面はもう動いている
       start(async () => {
+        let writtenAt: string;
         try {
-          await stackBlocksAction(
+          ({ written_at: writtenAt } = await stackBlocksAction(
             moves.map((m) => ({
               id: m.id,
               parent_id: m.parentId,
@@ -426,15 +447,25 @@ function Board({
               x: m.x,
               y: m.y,
             })),
-          );
+          ));
         } catch {
           forget(moves, seq);
           toast("動かせませんでした");
           return;
         }
-        // 3. 後片づけ。ふつうは DB が追いつけば描画側が勝手に無視するが、
-        //    その前に相手が同じ積み木を動かしたりすると永遠に一致しないので、少し待って忘れる。
-        setTimeout(() => forget(moves, seq), 5000);
+        // 3. DB に書けた時刻を覚える。これより後の書き込みが届いたら、この記録は古い
+        setOverlay((prev) => {
+          let changed = false;
+          const next = new Map(prev);
+          for (const m of moves) {
+            const e = next.get(m.id);
+            if (e?.seq === seq) {
+              next.set(m.id, { ...e, writtenAt });
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
       });
     },
     [start, forget],

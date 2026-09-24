@@ -53,6 +53,8 @@ export interface PeriodBlock {
   subtasks: PeriodSubtask[];
   done_subtasks: number;
   created_at: string;
+  /** 最後に書きかえた時刻。動かした記録を捨ててよいかの判断に使う */
+  updated_at: string;
 }
 
 export interface PeriodSummary {
@@ -253,6 +255,7 @@ export async function getPeriodBoard(periodId: string): Promise<PeriodBoard | nu
       subtasks,
       done_subtasks: subtasks.filter((s) => s.done).length,
       created_at: m.createdAt,
+      updated_at: m.updatedAt,
     };
   });
 
@@ -440,17 +443,25 @@ export interface BlockMove {
   y: number | null;
 }
 
-export async function moveBlocks(moves: BlockMove[]): Promise<void> {
+/**
+ * 積み木を動かす。**いつ書いたか(updated_at)を返す。**
+ * 画面側はこの時刻を覚えておき、「届いたデータがこれより新しい別の書き込みを示していたら
+ * 自分の記録は古い」と判断する(時間で待つのではなく、DB の記録で判断するため)。
+ */
+export async function moveBlocks(moves: BlockMove[]): Promise<string> {
   const db = getDb();
+  const at = nowIso();
   for (const m of moves.slice(0, 200)) {
     await db.update(schema.milestones)
       .set({
         parentId: m.parent_id,
         sortOrder: m.sort_order,
+        updatedAt: at,
         ...(m.x !== null && m.y !== null ? { boardX: m.x, boardY: m.y } : {}),
       })
       .where(eq(schema.milestones.id, m.id));
   }
+  return at;
 }
 
 /**

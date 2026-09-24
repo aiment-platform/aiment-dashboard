@@ -382,8 +382,9 @@ const blockMoveSchema = z.array(
 
 export async function stackBlocksAction(moves: z.infer<typeof blockMoveSchema>) {
   const { moveBlocks } = await import("@/lib/services/periods");
-  await moveBlocks(blockMoveSchema.parse(moves));
+  const writtenAt = await moveBlocks(blockMoveSchema.parse(moves));
   refresh();
+  return { written_at: writtenAt };
 }
 
 /** ブロックの「できた」トグル。target=1 なので 1↔0 で状態が導出される。 */
