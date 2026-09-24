@@ -17,7 +17,8 @@
     "e2e:contacts": "node e2e/contacts.e2e.mjs",
     "e2e:realtime": "node e2e/realtime.e2e.mjs",
     "dev:slow": "DB_LATENCY_MS=${DB_LATENCY_MS:-300} next dev -p ${PORT:-3939}",
-    "e2e:lag": "node e2e/lag.e2e.mjs"
+    "e2e:lag": "node e2e/lag.e2e.mjs",
+    "e2e:mcp": "node e2e/mcp.e2e.mjs"
   },
   "dependencies": {
     "@liveblocks/client": "^3.24.1",
@@ -29,6 +30,7 @@
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.33.0",
+    "mcp-handler": "^2.2.0",
     "nanoid": "^6.0.1",
     "next": "16.3.1",
     "next-themes": "^0.4.6",

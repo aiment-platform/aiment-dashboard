@@ -437,3 +437,34 @@ commit(moves) → setPending(moves)   // 2回目で1回目の記録を上書き
 |---|---|---|
 | 2つ目を動かしたあと1つ目がずれた回数 | 58/148 | **0/148** |
 | 5つ立て続けに動かしたあとずれた回数 | 276/390 | **0/400** |
+
+
+---
+
+# 追補 — MCP を Vercel に (2026-09-24)
+
+相方も使えるように、MCP を**Vercel 上の HTTP**で公開した(手元の stdio も残す)。
+
+| | |
+|---|---|
+| 入口 | `src/app/api/mcp/route.ts`(`mcp-handler` 2.x。状態を持たないので Vercel と相性が良い、Redis 不要) |
+| ツール | `src/lib/mcp/tools.ts` に1か所。HTTP も stdio もここを登録する |
+| 手元 | `mcp/server.ts`(stdio)。**SDK は v2 (`@modelcontextprotocol/server`) に統一** — mcp-handler 2.x が v2 前提のため |
+| 鍵 | ① Vercel Protection Bypass(Vercel が見る) + ② `MCP_TOKEN`(route で `timingSafeEqual`) |
+| 書き込み後 | Liveblocks `broadcastEvent` で `board-changed` → 盤を開いている人に即映る |
+| 記録 | actor `{ type: "agent", id: "mcp" }` → activity_log |
+
+**設計の決まり**
+- ツールは**決めない、材料を渡す**。`get_briefing`(`src/lib/services/briefing.ts`)は積み木ごとに
+  `reasons`(期限切れ・期限間近・重要・止まっている・取り組み中・途中まで進んだ・担当なし)と目安の `score` を付けて並べるだけ
+- メンバーは名前(Soya/Futo/Other)で受ける。`resolveMember` が名前・ID どちらも解決し、知らない名前はエラー
+- 連絡先の住所は画面と同じ `detectAddress` で種類を見分ける
+- 読む道具には `readOnlyHint`、片づけには `destructiveHint`(AI アプリが確認を挟む目安)
+- 旧 stdio サーバーの21ツール(目標・ワークストリーム時代の語彙)は廃止
+
+**検証**: `npm run e2e:mcp` 24項目(公式SDKクライアントで鍵・読む・書く・盤への即時反映・activity_log)。
+加えて本物の Claude Code(`claude -p --mcp-config`)から `get_briefing` を呼ばせ、理由つきで答えることを確認。
+
+**落とし穴**
+- `.env.local` の末尾に改行が無いと、`>>` で足した行が前の行にくっつく(一度 Liveblocks の鍵を壊しかけた)
+- npm キャッシュに root 所有のファイルがあり `npm view` が落ちる。`--cache` で一時置き場を指定して回避

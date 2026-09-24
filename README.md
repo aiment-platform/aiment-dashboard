@@ -110,6 +110,74 @@ Vercel に入れるのは **`DATABASE_URL`** だけです（`LIVEBLOCKS_SECRET_K
 - XのURLを貼っても、IDだけを取り出して保存します
 - `GET /api/v1/contacts` で同じものが取れます（エージェント用・読み取りのみ）
 
+## AIから使う（MCP）
+
+Claude Code や Codex から、盤と連絡先を**読んだり書いたり**できます。
+「今日なにからやる？」と聞くと、期限・重要・止まっているもの・返事待ちの長さを根拠に答えます。
+
+| ツール | できること |
+|---|---|
+| `get_briefing` ★ | 今日なにやる？ — 手をつけるべき積み木と連絡すべき相手を、**理由つき・目安の優先度順**で |
+| `get_board` / `list_periods` / `list_contacts` | 盤・期間・連絡先を見る |
+| `create_block` / `update_block` / `set_block_done` / `set_working` / `delete_block` | 積み木を置く・書きかえる・できたにする・取り組み中・片づける |
+| `add_subtask` / `update_subtask` | サブタスク |
+| `create_contact` / `update_contact` | 連絡先（X の URL などは種類を自動で見分ける） |
+
+- AI の書き込みは `activity_log` に **agent** として残ります
+- 盤を開いている人には、**AI の書き込みも再読み込みなしで映ります**（Liveblocks）
+- 中身は画面と同じ `src/lib/services` を呼ぶだけなので、AI が見るものと画面は必ず一致します
+
+### 鍵は2つ
+
+本番は Vercel の保護の内側にあるので、AI アプリが入るには鍵が2つ要ります。
+
+| 鍵 | どこで作る | 役目 |
+|---|---|---|
+| ① Vercel の合言葉 | Vercel → Settings → Deployment Protection → **Protection Bypass for Automation** | Vercel の門を通る（`x-vercel-protection-bypass` ヘッダー） |
+| ② `MCP_TOKEN` | Vercel の環境変数に自分で入れる（`openssl rand -hex 32`） | `/api/mcp` だけを開ける（`Authorization: Bearer`） |
+
+①はサイト全体の鍵なので、お二人以外には渡さないこと。②があるので、①が漏れても②を変えれば MCP だけ止められます。
+
+### つなぎ方（一人ひとりのPCで1回だけ）
+
+**Claude Code** — このリポジトリには `.mcp.json` が入っているので、**環境変数を3つ入れるだけ**です（`~/.zshrc` などに）。
+
+```bash
+export AIMENT_MCP_URL="https://<本番ドメイン>/api/mcp"
+export AIMENT_MCP_TOKEN="<②>"
+export AIMENT_VERCEL_BYPASS="<①>"
+```
+
+リポジトリの外（どこからでも）使いたいときは:
+
+```bash
+claude mcp add --scope user --transport http aiment "https://<本番ドメイン>/api/mcp" \
+  --header "Authorization: Bearer <②>" \
+  --header "x-vercel-protection-bypass: <①>"
+```
+
+**Codex** — `~/.codex/config.toml` に:
+
+```toml
+[mcp_servers.aiment]
+url = "https://<本番ドメイン>/api/mcp"
+bearer_token_env_var = "AIMENT_MCP_TOKEN"
+http_headers = { "x-vercel-protection-bypass" = "<①>" }
+```
+
+つながったら「aiment で今日なにからやる？」と聞いてみてください。
+
+### 開発するとき
+
+```bash
+npm run mcp                                            # 手元のDBで動く MCP(stdio)
+npx @modelcontextprotocol/inspector npm run mcp        # ブラウザでツールを1つずつ試す
+npm run e2e:mcp                                        # /api/mcp を本物のクライアントで叩く 24項目
+```
+
+ツールを足すときは `src/lib/mcp/tools.ts` だけ触れば、HTTP にも stdio にも出ます。
+**説明文(description)が大事**です。AI は名前と説明だけを読んで、使うかどうかを決めます。
+
 ## 概念
 
 ```

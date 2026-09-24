@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "aiment": {
+      "type": "http",
+      "url": "${AIMENT_MCP_URL}",
+      "headers": {
+        "Authorization": "Bearer ${AIMENT_MCP_TOKEN}",
+        "x-vercel-protection-bypass": "${AIMENT_VERCEL_BYPASS}"
+      }
+    }
+  }
+}
