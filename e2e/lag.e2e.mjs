@@ -12,11 +12,19 @@ const ok = (label, cond, extra = "") => {
   else fail++;
 };
 
-// 遅延が本当に効いているか(盤の表示に 400ms 以上かかるか)
-const t0 = Date.now();
-await fetch(BASE, { headers: { cookie: "aiment_account=mem_soya" } });
-const loadMs = Date.now() - t0;
-if (loadMs < 400) {
+// 遅延が本当に効いているか。盤は1往復ぶんまで速くしたので、一覧(/tasks)も含めて測る。
+// 遅延が効いていれば、どちらも 250ms 以上かかる(効いていなければ数十ms)。
+// 本文まで読み切ってから測る。loading.tsx があると「読み込み中」の枠が先に届くので、
+// 最初の返事だけで測ると一瞬で終わったように見えてしまう。
+const time = async (path) => {
+  const t = Date.now();
+  const r = await fetch(BASE + path, { headers: { cookie: "aiment_account=mem_soya" } });
+  await r.text();
+  return Date.now() - t;
+};
+await time("/");
+const loadMs = Math.min(await time("/"), await time("/tasks"));
+if (loadMs < 250) {
   console.log(`盤の表示が ${loadMs}ms。遅延が効いていないのでスキップ(npm run dev:slow で起動してください)\n0/0 passed`);
   process.exit(0);
 }

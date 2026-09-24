@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId, nowIso } from "@/lib/ids";
 import { logActivity, type Actor } from "./activity";
@@ -154,8 +154,8 @@ export async function defaultPeriodId(): Promise<string | null> {
  * 順番に聞いても誰も気づかなかったが、外のPostgres(Neon等)だと1問ごとに
  * 往復の待ち時間がかかる。10問順番に聞けば、待ち時間も10倍になる。
  *
- * なので「前の答えが要るもの」だけ順番にして、あとは Promise.all で**同時に**聞く。
- * いまは3段階:
+ * なので全部を Promise.all で**同時に**聞く(積み木 → ワークストリーム → 期間 を JOIN で絞る)。
+ * 以前の3段階の作りはこうだった(いまは1段階):
  *   1. 期間そのもの
  *   2. その期間のワークストリーム(積み木を絞り込むのに要る)
  *   3. 残り全部(積み木・サブタスク・ブロッカー・取り組み中・メンバー・他の期間)
@@ -164,43 +164,42 @@ export async function getPeriodBoard(periodId: string): Promise<PeriodBoard | nu
   const db = getDb();
   const t = today();
 
-  const o = (await db.select().from(schema.objectives).where(eq(schema.objectives.id, periodId)))[0];
-  if (!o) return null;
-
-  const wsRows = await db
-    .select()
-    .from(schema.workstreams)
-    .where(eq(schema.workstreams.objectiveId, periodId));
-  const wsIds = wsRows.map((w) => w.id);
-  const wsOwner = new Map(wsRows.map((w) => [w.id, w.ownerId]));
-
-  // この期間に積み木が無いなら、これ以上DBに聞くことは無い
-  const msRows = wsIds.length
-    ? (
-        await db
-          .select()
-          .from(schema.milestones)
-          .where(inArray(schema.milestones.workstreamId, wsIds))
-          .orderBy(schema.milestones.sortOrder)
-      ).filter((m) => m.status !== "dropped")
-    : [];
-  const msIds = msRows.map((m) => m.id);
-
-  const [members, allTasks, activeBlockers, workerRows, siblings] = await Promise.all([
-    memberMap(),
-    msIds.length
-      ? db.select().from(schema.tasks).where(inArray(schema.tasks.milestoneId, msIds))
-      : Promise.resolve([] as (typeof schema.tasks.$inferSelect)[]),
+  // 全部「この期間の」で絞れる(積み木 → ワークストリーム → 期間 をつないで聞く)ので、
+  // 前の答えを待つ必要が無い。**1往復ぶん**で全部そろう(以前は4往復)。
+  const inPeriod = eq(schema.workstreams.objectiveId, periodId);
+  const [objRows, wsRows, msJoined, taskJoined, activeBlockers, workerJoined, members, siblings] = await Promise.all([
+    db.select().from(schema.objectives).where(eq(schema.objectives.id, periodId)),
+    db.select().from(schema.workstreams).where(inPeriod),
+    db
+      .select({ m: schema.milestones })
+      .from(schema.milestones)
+      .innerJoin(schema.workstreams, eq(schema.milestones.workstreamId, schema.workstreams.id))
+      .where(inPeriod)
+      .orderBy(schema.milestones.sortOrder),
+    db
+      .select({ t: schema.tasks })
+      .from(schema.tasks)
+      .innerJoin(schema.milestones, eq(schema.tasks.milestoneId, schema.milestones.id))
+      .innerJoin(schema.workstreams, eq(schema.milestones.workstreamId, schema.workstreams.id))
+      .where(inPeriod),
     db.select().from(schema.blockers).where(eq(schema.blockers.status, "active")),
-    msIds.length
-      ? db
-          .select()
-          .from(schema.blockWorkers)
-          .where(inArray(schema.blockWorkers.milestoneId, msIds))
-          .orderBy(schema.blockWorkers.startedAt)
-      : Promise.resolve([] as (typeof schema.blockWorkers.$inferSelect)[]),
+    db
+      .select({ w: schema.blockWorkers })
+      .from(schema.blockWorkers)
+      .innerJoin(schema.milestones, eq(schema.blockWorkers.milestoneId, schema.milestones.id))
+      .innerJoin(schema.workstreams, eq(schema.milestones.workstreamId, schema.workstreams.id))
+      .where(inPeriod)
+      .orderBy(schema.blockWorkers.startedAt),
+    memberMap(),
     listPeriods(),
   ]);
+
+  const o = objRows[0];
+  if (!o) return null;
+  const wsOwner = new Map(wsRows.map((w) => [w.id, w.ownerId]));
+  const msRows = msJoined.map((r) => r.m).filter((m) => m.status !== "dropped");
+  const allTasks = taskJoined.map((r) => r.t);
+  const workerRows = workerJoined.map((r) => r.w);
 
   const blockedTaskIds = new Set(
     activeBlockers.map((b) => b.taskId).filter(Boolean) as string[],
@@ -360,8 +359,18 @@ export interface WorkItem {
 export async function listWork(): Promise<WorkItem[]> {
   const db = getDb();
   const t = today();
-  const objById = new Map((await db.select().from(schema.objectives)).map((o) => [o.id, o]));
-  const wsById = new Map(await (await db.select().from(schema.workstreams)).map((w) => [w.id, w]));
+  // 7つとも互いを待たないので、同時に聞く(以前は順番に7往復していた)
+  const [objRows, wsRows, msAll, activeBlockers, taskAll, members, workerRows] = await Promise.all([
+    db.select().from(schema.objectives),
+    db.select().from(schema.workstreams),
+    db.select().from(schema.milestones),
+    db.select().from(schema.blockers).where(eq(schema.blockers.status, "active")),
+    db.select().from(schema.tasks),
+    memberMap(),
+    db.select().from(schema.blockWorkers).orderBy(schema.blockWorkers.startedAt),
+  ]);
+  const objById = new Map(objRows.map((o) => [o.id, o]));
+  const wsById = new Map(wsRows.map((w) => [w.id, w]));
   const wsOwner = new Map([...wsById.values()].map((w) => [w.id, w.ownerId]));
   const periodOf = (workstreamId: string | null) => {
     const w = workstreamId ? wsById.get(workstreamId) : undefined;
@@ -369,25 +378,10 @@ export async function listWork(): Promise<WorkItem[]> {
     return o && o.status !== "archived" ? { id: o.id, title: o.title } : null;
   };
 
-  const msRows = (await db
-    .select()
-    .from(schema.milestones))
-    .filter((m) => m.status !== "dropped");
+  const msRows = msAll.filter((m) => m.status !== "dropped");
   const msById = new Map(msRows.map((m) => [m.id, m]));
-  const blockedTaskIds = new Set(
-    (await db
-      .select()
-      .from(schema.blockers)
-      .where(eq(schema.blockers.status, "active")))
-      .map((b) => b.taskId)
-      .filter(Boolean) as string[],
-  );
-  const allTasks = await (await db.select().from(schema.tasks)).filter((x) => x.status !== "dropped");
-  const members = await memberMap();
-  const workerRows = await db
-    .select()
-    .from(schema.blockWorkers)
-    .orderBy(schema.blockWorkers.startedAt);
+  const blockedTaskIds = new Set(activeBlockers.map((b) => b.taskId).filter(Boolean) as string[]);
+  const allTasks = taskAll.filter((x) => x.status !== "dropped");
 
   const blocks: WorkItem[] = msRows.map((m) => {
     const due = m.dueDate?.slice(0, 10) ?? null;
