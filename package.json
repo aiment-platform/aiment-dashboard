@@ -14,7 +14,10 @@
     "e2e:board": "node e2e/board.e2e.mjs",
     "db:migrate": "tsx src/scripts/migrate.ts",
     "vercel-build": "npm run db:migrate && next build",
-    "e2e:contacts": "node e2e/contacts.e2e.mjs"
+    "e2e:contacts": "node e2e/contacts.e2e.mjs",
+    "e2e:realtime": "node e2e/realtime.e2e.mjs",
+    "dev:slow": "DB_LATENCY_MS=${DB_LATENCY_MS:-300} next dev -p ${PORT:-3939}",
+    "e2e:lag": "node e2e/lag.e2e.mjs"
   },
   "dependencies": {
     "@liveblocks/client": "^3.24.1",

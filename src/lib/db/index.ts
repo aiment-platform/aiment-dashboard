@@ -59,15 +59,22 @@ export function getSql() {
 export function getDb(): Db {
   if (!globalForDb.__aimentDb) {
     const ms = latency();
+    // drizzle は postgres.js を「関数として呼ぶ」のではなく client.unsafe(...) で呼ぶ。
+    // なので遅らせるなら unsafe を包む必要がある(以前は関数呼び出しだけ包んでいて、実は効いていなかった)。
+    const delay = () => new Promise((r) => setTimeout(r, ms));
     const sql = ms
       ? new Proxy(getSql(), {
-          apply(target, thisArg, args: unknown[]) {
-            const out = Reflect.apply(target as never, thisArg, args) as Promise<unknown> & {
-              then?: unknown;
+          get(target, prop, receiver) {
+            const v = Reflect.get(target, prop, receiver);
+            if (prop !== "unsafe" || typeof v !== "function") return v;
+            return (...args: unknown[]) => {
+              const q = (v as (...a: unknown[]) => PromiseLike<unknown> & { values: () => PromiseLike<unknown> }).apply(target, args);
+              return {
+                then: (ok: (x: unknown) => unknown, ng?: (e: unknown) => unknown) =>
+                  delay().then(() => q).then(ok, ng),
+                values: () => delay().then(() => q.values()),
+              };
             };
-            return new Promise((resolve, reject) =>
-              setTimeout(() => Promise.resolve(out).then(resolve, reject), ms),
-            );
           },
         })
       : getSql();

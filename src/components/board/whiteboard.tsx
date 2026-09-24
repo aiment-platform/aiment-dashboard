@@ -138,6 +138,17 @@ function newGhost(
   };
 }
 
+/** 一時メモリの中の仮IDを本物のIDに付け替える(置いた直後に動かした分を失わないため) */
+function rekey<T extends Move>(prev: Map<string, T>, swap: Map<string, string>): Map<string, T> {
+  if (![...swap.keys()].some((k) => prev.has(k))) return prev;
+  const next = new Map<string, T>();
+  for (const [id, m] of prev) {
+    const to = swap.get(id) ?? id;
+    next.set(to, { ...m, id: to });
+  }
+  return next;
+}
+
 export function Whiteboard(props: {
   period: PeriodSummary;
   siblings: PeriodSummary[];
@@ -180,7 +191,16 @@ function Board({
   const [panning, setPanning] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   /** サーバーの答えを待たずに動かして見せるための上書き(ドラッグ中と直後だけ) */
-  const [pending, setPending] = useState<Move[] | null>(null);
+  /*
+   * 動かした結果の「一時メモリ」。積み木ID → そこに置いたという記録。
+   *
+   * 以前は「最後に動かした1回分」しか持っていなかったので、1つ目の書き込みがDBに届く前に
+   * 2つ目を動かすと1つ目の記録が上書きで消え、DBの古い位置へワープしていた。
+   * いまは**積み木ごとに**覚えておき、それぞれ DB が追いついた時点で1つずつ忘れる。
+   * seq は「いつの記録か」の番号。古い書き込みの後片づけが新しい記録を消さないために使う。
+   */
+  const [overlay, setOverlay] = useState<Map<string, Move & { seq: number }>>(new Map());
+  const seqRef = useRef(0);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [draft, setDraft] = useState<{ x: number; y: number } | null>(null);
   /** いま離したらどこにくっつくか */
@@ -290,19 +310,22 @@ function Board({
   }, [blocks, expanded]);
 
   /** 届いたデータが移動を反映していたら、その上書きはもう要らない */
+  /** 一時メモリのうち、DBがまだ追いついていないものだけ(追いついたものは描画では無視する) */
   const livePending = useMemo(() => {
-    if (!pending) return null;
-    const caughtUp = pending.every((m) => {
-      const b = serverBlocks.find((x) => x.id === m.id);
-      if (!b) return false;
-      return (
+    const serverById = new Map(serverBlocks.map((b) => [b.id, b]));
+    const live: Move[] = [];
+    for (const m of overlay.values()) {
+      const b = serverById.get(m.id);
+      const caughtUp =
+        b !== undefined &&
         b.parent_id === m.parentId &&
+        b.sort_order === m.sortOrder &&
         (b.x ?? null) === (m.x ?? null) &&
-        (b.y ?? null) === (m.y ?? null)
-      );
-    });
-    return caughtUp ? null : pending;
-  }, [pending, serverBlocks]);
+        (b.y ?? null) === (m.y ?? null);
+      if (!caughtUp) live.push(m);
+    }
+    return live.length ? live : null;
+  }, [overlay, serverBlocks]);
 
   /** サーバーの状態に、返事待ちの移動を重ねたもの */
   const world = useMemo(
@@ -315,6 +338,16 @@ function Board({
   const ordered = useMemo(
     () => [...blocks].sort((a, b) => (placed.get(b.id)?.depth ?? 0) - (placed.get(a.id)?.depth ?? 0)),
     [blocks, placed],
+  );
+
+  /**
+   * 「画面基準の大きさ」にしたいものに付ける。
+   * 紙は cam.scale 倍に拡大されているので、その中で 1/scale 倍すれば画面上では元の大きさに戻る。
+   * カーソル・道具箱・合図のような「紙の上の物ではなく操作のためのUI」に使う(Figma と同じ扱い)。
+   */
+  const screenSized = useMemo(
+    () => ({ transform: `scale(${1 / cam.scale})`, transformOrigin: "0 0" as const }),
+    [cam.scale],
   );
 
   /** 掴んだ積み木が、置かれていた場所からどれだけズレているか */
@@ -357,10 +390,32 @@ function Board({
     return layoutAll(next.nodes, next.ground).get(dragId) ?? null;
   }, [drop, dragId, world]);
 
+  /** この回(seq)の記録だけを忘れる。あとから同じ積み木を動かした記録は残す。 */
+  const forget = useCallback((moves: Move[], seq: number) => {
+    setOverlay((prev) => {
+      let changed = false;
+      const next = new Map(prev);
+      for (const m of moves) {
+        if (next.get(m.id)?.seq === seq) {
+          next.delete(m.id);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, []);
+
   /** 移動を「見た目に反映 → サーバーへ保存」。やり直しはこの逆を積む。 */
   const commit = useCallback(
     (moves: Move[]) => {
-      setPending(moves);
+      const seq = ++seqRef.current;
+      // 1. 一時メモリに書く(積み木ごと。前の記録は、同じ積み木のものだけ新しいものに置きかわる)
+      setOverlay((prev) => {
+        const next = new Map(prev);
+        for (const m of moves) next.set(m.id, { ...m, seq });
+        return next;
+      });
+      // 2. DB へ。返事を待たずに画面はもう動いている
       start(async () => {
         try {
           await stackBlocksAction(
@@ -372,18 +427,18 @@ function Board({
               y: m.y,
             })),
           );
-          // ここで setPending(null) はしない。
-          // サーバーの返事が返っても、画面用のデータが届くのはもう少しあと。
-          // その隙間で上書きを外すと、一瞬だけ元の場所に戻って見える。
         } catch {
-          setPending(null);
+          forget(moves, seq);
           toast("動かせませんでした");
+          return;
         }
+        // 3. 後片づけ。ふつうは DB が追いつけば描画側が勝手に無視するが、
+        //    その前に相手が同じ積み木を動かしたりすると永遠に一致しないので、少し待って忘れる。
+        setTimeout(() => forget(moves, seq), 5000);
       });
     },
-    [start],
+    [start, forget],
   );
-
 
   /** いまの状態を、あとで戻せる形(Move[])で写し取る */
   const snapshotOf = useCallback(
@@ -628,7 +683,7 @@ function Board({
           made = await duplicateBlocksAction(items);
           const swap = new Map(temps.map((t, i) => [t.id, made[i]]).filter(([, v]) => v) as [string, string][]);
           setGhosts((g) => g.map((x) => (swap.has(x.id) ? { ...x, id: swap.get(x.id)! } : x)));
-          setPending((ps) => ps?.map((m) => (swap.has(m.id) ? { ...m, id: swap.get(m.id)! } : m)) ?? null);
+          setOverlay((prev) => rekey(prev, swap));
           setSelected(new Set(made));
         } catch {
           const ids = new Set(temps.map((t) => t.id));
@@ -724,7 +779,7 @@ function Board({
         // 置いた直後に動かした場合、その移動も仮のIDを指しているので一緒に付け替える
         // (でないと、本物が届いた瞬間に元の位置へ戻って見える)。
         setGhosts((g) => g.map((x) => (x.id === tempId ? { ...x, id: realId } : x)));
-        setPending((ps) => ps?.map((m) => (m.id === tempId ? { ...m, id: realId } : m)) ?? null);
+        setOverlay((prev) => rekey(prev, new Map([[tempId, realId]])));
         setSelected((sel) => {
           if (!sel.has(tempId)) return sel;
           const n = new Set(sel);
@@ -814,7 +869,8 @@ function Board({
         className="board-surface fixed inset-0 overflow-hidden bg-paper"
         data-panning={panning}
         data-space={spaceHeld}
-        onPointerLeave={() => sendCursor.current?.(null)}
+        // 盤の外に出てもカーソルは消さない。「最後にどこを見ていたか」は残っていたほうが役に立つし、
+        // 消すと「タブを切り替えるためにマウスをタブバーへ持っていく」だけで相手から見えなくなる。
         data-testid="whiteboard"
         // 水玉は紙の模様。カメラと同じだけずらし、同じだけ伸び縮みさせる。
         style={{
@@ -1062,6 +1118,7 @@ function Board({
                 left: heldPos.x - 10,
                 top: heldPos.y - 10,
                 zIndex: 320,
+                ...screenSized,
                 "--depth-x": "0px",
                 "--depth-y": "2px",
                 "--depth-color": "#4a2fc4",
@@ -1073,7 +1130,7 @@ function Board({
           )}
 
           {/* 相手のカーソル。紙の中に置くので、拡大しても位置がずれない */}
-          {realtime && <RealtimeCursors />}
+          {realtime && <RealtimeCursors scale={cam.scale} />}
 
           {/* 範囲選択の枠 */}
           {marquee && (
@@ -1095,7 +1152,8 @@ function Board({
               return (
                 <div
                   className="absolute"
-                  style={{ left: p.x + p.width + 14, top: p.y - 4, zIndex: 300 }}
+                  // 道具箱は画面基準の大きさ(拡大率の逆数で打ち消す)。位置は積み木の右のまま
+                  style={{ left: p.x + p.width + 14, top: p.y - 4, zIndex: 300, ...screenSized }}
                 >
                   <BlockToolbar
                     block={b}
@@ -1119,7 +1177,7 @@ function Board({
             const right = Math.max(...rects.map((r) => r.x + r.w));
             const top = Math.min(...rects.map((r) => r.y));
             return (
-              <div className="absolute" style={{ left: right + 14, top: top - 4, zIndex: 300 }}>
+              <div className="absolute" style={{ left: right + 14, top: top - 4, zIndex: 300, ...screenSized }}>
                 <MultiToolbar
                   blocks={chosen}
                   currentMemberId={currentMemberId}

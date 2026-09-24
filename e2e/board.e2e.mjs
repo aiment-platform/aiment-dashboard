@@ -428,6 +428,22 @@ ok("Backspace も ⌘Z で戻せる", (await count()) === before5);
 await page.keyboard.press("Escape");
 await settle(300);
 
+// ---- 4c. 道具箱は画面基準の大きさ(拡大しても小さくならない) ----------------
+await selectBlock("Discordサーバー");
+const tbW = async () => (await page.locator("[data-testid='block-delete']").boundingBox()).width;
+const tb0 = await tbW();
+for (let i = 0; i < 4; i++) await page.locator("[data-testid='zoom-in']").click();
+await settle(300);
+const tbIn = await tbW();
+for (let i = 0; i < 9; i++) await page.locator("[data-testid='zoom-out']").click();
+await settle(300);
+const tbOut = await tbW();
+ok("拡大しても縮小しても、道具箱の大きさは変わらない", Math.abs(tbIn - tb0) < 1.5 && Math.abs(tbOut - tb0) < 1.5, `${Math.round(tb0)} / ${Math.round(tbIn)} / ${Math.round(tbOut)}px`);
+for (let i = 0; i < 5; i++) await page.locator("[data-testid='zoom-in']").click(); // 元の倍率に戻す
+await settle(300);
+await page.keyboard.press("Escape");
+await settle(200);
+
 // ---- 5. 作成・書きかえ・片づけ --------------------------------------------
 const newTitle = `E2Eの積み木 ${stamp}`;
 await page.mouse.dblclick(1240, 690); // 右下は操作の島がいるので避ける

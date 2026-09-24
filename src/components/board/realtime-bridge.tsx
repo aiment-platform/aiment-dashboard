@@ -17,9 +17,9 @@ import { OtherCursors, PresenceChips, useBoardSync, useCursorBroadcast } from ".
  * **その親を基準にしてしまう**ので、紙の中に置くと角に固定できない。
  */
 
-/** 紙の中に置く: 相手のカーソル */
-export function RealtimeCursors() {
-  return <OtherCursors />;
+/** 紙の中に置く: 相手のカーソル。scale は紙の拡大率(大きさを打ち消すのに使う) */
+export function RealtimeCursors({ scale }: { scale: number }) {
+  return <OtherCursors scale={scale} />;
 }
 
 /** 紙の外に置く: 合図のやり取り、カーソルの送信、左上の「いま居る人」 */

@@ -74,8 +74,14 @@ export function useBoardSync(pending: boolean) {
   }, [pending, broadcast]);
 }
 
-/** 相手のカーソル。紙の座標で持っているので、拡大しても位置がずれない。 */
-export function OtherCursors() {
+/**
+ * 相手のカーソル。
+ * **位置**は紙の座標(拡大しても指している場所がずれない)、
+ * **大きさ**は画面基準(拡大しても小さくならない・大きくならない)。
+ * 紙が scale 倍に拡大されている層の中に置くので、自分だけ 1/scale 倍して打ち消す。
+ * Figma 系のキャンバス(tldraw など)がやっているのと同じ方式。
+ */
+export function OtherCursors({ scale }: { scale: number }) {
   const others = useOthers();
   return (
     <>
@@ -87,7 +93,13 @@ export function OtherCursors() {
           <div
             key={connectionId}
             className="pointer-events-none absolute"
-            style={{ left: cursor.x, top: cursor.y, zIndex: 400 }}
+            style={{
+              left: cursor.x,
+              top: cursor.y,
+              zIndex: 400,
+              transform: `scale(${1 / scale})`,
+              transformOrigin: "0 0", // 矢印の先端を基準に。位置は紙の座標のまま
+            }}
             data-testid="other-cursor"
             data-name={info?.name ?? ""}
           >
@@ -167,7 +179,10 @@ export function PresenceChips() {
   );
 }
 
-/** 自分のカーソルを相手へ流す。紙の座標に直してから渡す。 */
+/**
+ * 自分のカーソルを相手へ流す。紙の座標に直してから渡す。
+ * 盤の外に出ても消さない(最後の位置が残る)。消すのは接続が切れたときだけで、それは Liveblocks が勝手にやる。
+ */
 export function useCursorBroadcast() {
   const update = useUpdateMyPresence();
   return {
