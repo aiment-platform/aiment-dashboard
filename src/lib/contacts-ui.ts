@@ -1,4 +1,4 @@
-import type { ContactKind, ContactStatus } from "@/lib/constants";
+import type { ContactChannel, ContactKind, ContactStatus } from "@/lib/constants";
 
 /** 画面に出す日本語と色。DBの値(英語)はそのまま、見せ方だけここで決める。 */
 
@@ -48,51 +48,109 @@ export function daysAgo(iso: string | null): number | null {
   return Math.round((today - d) / 86_400_000);
 }
 
-// ---- 連絡先の自動判別 --------------------------------------------------------
+// ---- 連絡手段(タグ) ------------------------------------------------------------
 
-export type AddressKey = "handle" | "discord" | "email" | "url";
+export type AddressKey = ContactChannel;
 
-export const ADDRESS_LABEL: Record<AddressKey, string> = {
-  handle: "X",
+export const ADDRESS_LABEL: Record<ContactChannel, string> = {
+  x: "X",
+  instagram: "Instagram",
+  tiktok: "TikTok",
+  youtube: "YouTube",
   discord: "Discord",
+  messenger: "Messenger",
+  line: "LINE",
   email: "メール",
   url: "ページ",
+  other: "その他",
 };
 
+/** その手段の値を開くリンク。開けないもの(Discord の名前など)は null */
+export function channelHref(channel: ContactChannel, value: string): string | null {
+  const v = value.trim();
+  if (!v) return null; // アドレス未入力のタグ
+  if (/^https?:\/\//i.test(v)) return v;
+  switch (channel) {
+    case "x":
+      return `https://x.com/${v.replace(/^@/, "")}`;
+    case "instagram":
+      return `https://instagram.com/${v.replace(/^@/, "")}`;
+    case "tiktok":
+      return `https://www.tiktok.com/@${v.replace(/^@/, "")}`;
+    case "youtube":
+      return v.startsWith("@") ? `https://youtube.com/${v}` : null;
+    case "messenger":
+      return `https://m.me/${v}`;
+    case "email":
+      return `mailto:${v}`;
+    case "url":
+      return `https://${v}`;
+    default: // discord / line / other: 開ける形とは限らない
+      return null;
+  }
+}
+
+/** 画面に出すときの形。ID で持っているものは @ を付ける */
+export function channelDisplay(channel: ContactChannel, value: string): string {
+  if ((channel === "x" || channel === "instagram" || channel === "tiktok") && !/^https?:/i.test(value)) {
+    return `@${value.replace(/^@/, "")}`;
+  }
+  return value;
+}
+
 export interface DetectedAddress {
-  key: AddressKey;
-  /** 保存する値(XならIDだけ、URLなら https:// 付き) */
+  key: ContactChannel;
+  /** 保存する値(SNS なら URL から ID だけ取り出す、ページなら https:// 付き) */
   value: string;
-  /** 「X か Discord か決めかねる1語」のとき true。画面で切り替えられるようにする */
+  /** 1語だけで、どの SNS の ID か決めかねる */
   ambiguous: boolean;
 }
 
 /** これで終わっていたらページ(URL)とみなす。Discord のユーザー名に付く「.」と区別するため */
 const KNOWN_TLD = /\.(com|net|org|jp|io|tv|gg|me|co|dev|app|info|xyz|site|link|page|studio|fm|live|store|shop)(\/|$)/i;
 
+/** プロフィールURLから ID を取り出す(ドメインごと) */
+const PROFILE: { key: ContactChannel; re: RegExp }[] = [
+  { key: "x", re: /^(?:https?:\/\/)?(?:www\.|mobile\.)?(?:x|twitter)\.com\/@?([A-Za-z0-9_]{1,15})(?:[/?#].*)?$/i },
+  { key: "instagram", re: /^(?:https?:\/\/)?(?:www\.)?instagram\.com\/([A-Za-z0-9_.]{1,30})\/?(?:[?#].*)?$/i },
+  { key: "tiktok", re: /^(?:https?:\/\/)?(?:www\.)?tiktok\.com\/@([A-Za-z0-9_.]{1,30})(?:[/?#].*)?$/i },
+];
+
+/** そのドメインなら、この種類として URL のまま持つ */
+const BY_DOMAIN: { key: ContactChannel; re: RegExp }[] = [
+  { key: "youtube", re: /^(?:https?:\/\/)?(?:www\.|m\.)?(?:youtube\.com|youtu\.be)\//i },
+  { key: "discord", re: /^(?:https?:\/\/)?(?:www\.)?(?:discord\.gg|discord\.com|discordapp\.com)\//i },
+  { key: "messenger", re: /^(?:https?:\/\/)?(?:www\.)?(?:m\.me|messenger\.com|facebook\.com|fb\.com)\//i },
+  { key: "line", re: /^(?:https?:\/\/)?(?:line\.me|lin\.ee)\//i },
+  { key: "instagram", re: /^(?:https?:\/\/)?(?:www\.)?instagram\.com\//i },
+  { key: "tiktok", re: /^(?:https?:\/\/)?(?:www\.|vt\.)?tiktok\.com\//i },
+];
+
 /**
- * 貼られた文字から、X / Discord / メール / ページ のどれかを見分ける。
+ * 貼られた文字から、どの連絡手段かを見分ける。
  *
  * 見分けの順番が大事(上から順に当てはめる):
- *   1. x.com / twitter.com の URL         → X(IDだけ取り出す)
- *   2. discord.gg / discord.com の URL     → Discord
+ *   1. X / Instagram / TikTok のプロフィールURL → その種類(IDだけ取り出す)
+ *   2. YouTube / Discord / Messenger / LINE などのURL → その種類(URLのまま)
  *   3. http(s):// や www. で始まる        → ページ
  *   4. a@b.c の形                          → メール
  *   5. name#1234 の形(昔の Discord)        → Discord
- *   6. @ で始まる1語                       → X
+ *   6. @ で始まる1語                       → X と仮定(決めかねる印)
  *   7. foo.com のような、よくある末尾のドメイン → ページ(https:// を付ける)
- *   8. それ以外の1語                        → X と仮定(ただし「決めかねる」印を付ける)
- *   9. 空白などを含む                       → Discord のユーザー名と仮定(同上)
+ *   8. それ以外の1語                        → X と仮定(決めかねる印)
+ *   9. 空白などを含む                       → Discord の名前と仮定(決めかねる印)
+ * 決めかねるものは、画面のタグから選び直せる。
  */
 export function detectAddress(raw: string): DetectedAddress | null {
   const t = raw.trim();
   if (!t) return null;
 
-  const x = t.match(/^(?:https?:\/\/)?(?:www\.)?(?:x|twitter)\.com\/@?([A-Za-z0-9_]{1,15})(?:[/?#].*)?$/i);
-  if (x) return { key: "handle", value: x[1], ambiguous: false };
-
-  if (/^(?:https?:\/\/)?(?:www\.)?(?:discord\.gg|discord\.com|discordapp\.com)\//i.test(t)) {
-    return { key: "discord", value: t, ambiguous: false };
+  for (const { key, re } of PROFILE) {
+    const m = t.match(re);
+    if (m) return { key, value: m[1], ambiguous: false };
+  }
+  for (const { key, re } of BY_DOMAIN) {
+    if (re.test(t)) return { key, value: /^https?:\/\//i.test(t) ? t : `https://${t}`, ambiguous: false };
   }
 
   if (/^https?:\/\//i.test(t)) return { key: "url", value: t, ambiguous: false };
@@ -102,14 +160,24 @@ export function detectAddress(raw: string): DetectedAddress | null {
 
   if (/^[^\s#@]{2,32}#\d{4}$/.test(t)) return { key: "discord", value: t, ambiguous: false };
 
-  if (/^@[A-Za-z0-9_]{1,15}$/.test(t)) return { key: "handle", value: t.slice(1), ambiguous: false };
+  if (/^@[A-Za-z0-9_.]{1,30}$/.test(t)) return { key: "x", value: t.slice(1), ambiguous: true };
 
   // メールは4で拾い終わっているので、ここに来た「@」入りは youtube.com/@name のようなURL
-  if (!/\s/.test(t) && KNOWN_TLD.test(t)) {
-    return { key: "url", value: `https://${t}`, ambiguous: false };
-  }
+  if (!/\s/.test(t) && KNOWN_TLD.test(t)) return { key: "url", value: `https://${t}`, ambiguous: false };
 
-  if (/^[A-Za-z0-9_.]{1,32}$/.test(t)) return { key: "handle", value: t, ambiguous: true };
+  if (/^[A-Za-z0-9_.]{1,32}$/.test(t)) return { key: "x", value: t, ambiguous: true };
 
   return { key: "discord", value: t, ambiguous: true };
+}
+
+/** 種類を手で選び直したとき、貼った文字をその種類の形に整える(壊さない範囲で) */
+export function valueAs(channel: ContactChannel, raw: string): string {
+  const t = raw.trim();
+  const profile = PROFILE.find((p) => p.key === channel);
+  if (profile) {
+    const m = t.match(profile.re);
+    return m ? m[1] : t.replace(/^@/, "");
+  }
+  if (channel === "url" && t && !/^https?:\/\//i.test(t)) return `https://${t}`;
+  return t;
 }

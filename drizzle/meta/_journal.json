@@ -15,6 +15,27 @@
       "when": 1789640430760,
       "tag": "0001_aberrant_nehzno",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790592613548,
+      "tag": "0002_contact_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790592614083,
+      "tag": "0003_move_contact_channels",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790592614622,
+      "tag": "0004_drop_old_contact_columns",
+      "breakpoints": true
     }
   ]
 }

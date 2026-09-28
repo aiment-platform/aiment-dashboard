@@ -99,18 +99,23 @@ try { await call("update_block", { block_id: "ms_nope", title: "x" }); } catch {
 ok("無い積み木を指すとエラーで知らせる", threw);
 
 // 連絡先: 住所の種類を自動で見分ける
-const person = await call("create_contact", { name: "MCPテスト", kind: "vtuber", address: "https://x.com/mcp_test?s=1", owner: "Futo" });
-await call("update_contact", { contact_id: person.id, status: "waiting", address: "mcp@example.com", note: "AIが足した" });
-const c = (await call("list_contacts", { query: "MCPテスト" }))[0];
-ok("create_contact で X の URL から ID だけ取り出す", c?.handle === "mcp_test");
-ok("update_contact で段階を進め、メールを足し、連絡日が今日になる", c.status === "waiting" && c.email === "mcp@example.com" && c.last_contacted_at === new Date().toISOString().slice(0, 10));
+const person = await call("create_contact", { name: "MCPテスト", kind: "vtuber", address: "https://x.com/mcp_test?s=1", owner: "Futo", summary: "AIが見つけた人" });
+await call("update_contact", { contact_id: person.id, status: "waiting", add_address: "https://www.instagram.com/mcp.test/", note: "AIが足した" });
+let c = (await call("list_contacts", { query: "MCPテスト" }))[0];
+ok("create_contact で X の URL から ID だけ取り出す", c?.links.some((l) => l.channel === "x" && l.value === "mcp_test"));
+ok("一言(summary)も入る", c.summary === "AIが見つけた人");
+ok("update_contact で段階を進め、Instagram を足し、連絡日が今日になる", c.status === "waiting" && c.links.some((l) => l.channel === "instagram" && l.value === "mcp.test") && c.last_contacted_at === new Date().toISOString().slice(0, 10));
+ok("list_contacts を連絡手段(via)で絞れる", (await call("list_contacts", { via: "instagram" })).some((x) => x.id === person.id));
+await call("update_contact", { contact_id: person.id, remove_link_id: c.links.find((l) => l.channel === "x").id });
+c = (await call("list_contacts", { query: "MCPテスト" }))[0];
+ok("update_contact で連絡手段を消せる", !c.links.some((l) => l.channel === "x"));
 
 // 後片づけ
 await call("delete_block", { block_id: made.id });
 ok("delete_block で片づけると盤から消える", !(await call("get_board")).blocks.some((x) => x.id === made.id));
 await fetch(`${BASE}/api/v1/contacts`); // (読み取り専用。連絡先は画面で消す想定なので DB から直接)
 const { execSync } = await import("node:child_process");
-execSync(`/opt/homebrew/opt/postgresql@17/bin/psql -d aiment -qc "delete from contacts where name='MCPテスト'"`);
+execSync(`/opt/homebrew/opt/postgresql@17/bin/psql -d aiment -qc "delete from contact_links where contact_id in (select id from contacts where name='MCPテスト'); delete from contacts where name='MCPテスト'"`);
 
 // activity_log に AI がやったと残っているか
 const log = execSync(`/opt/homebrew/opt/postgresql@17/bin/psql -d aiment -tAc "select count(*) from activity_log where actor_type='agent' and entity_id='${made.id}'"`).toString().trim();

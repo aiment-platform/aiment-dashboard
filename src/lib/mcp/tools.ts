@@ -17,8 +17,15 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { Liveblocks } from "@liveblocks/node";
 import { getDb, schema } from "@/lib/db";
 import { ACCOUNTS } from "@/lib/accounts";
-import { CONTACT_KIND, CONTACT_STATUS, type ContactKind, type ContactStatus } from "@/lib/constants";
-import { detectAddress } from "@/lib/contacts-ui";
+import {
+  CONTACT_CHANNEL,
+  CONTACT_KIND,
+  CONTACT_STATUS,
+  type ContactChannel,
+  type ContactKind,
+  type ContactStatus,
+} from "@/lib/constants";
+import { detectAddress, valueAs } from "@/lib/contacts-ui";
 import type { Actor } from "@/lib/services/activity";
 import { getBriefing, resolveMember } from "@/lib/services/briefing";
 import * as contacts from "@/lib/services/contacts";
@@ -141,21 +148,25 @@ export function registerAimentTools(server: McpServer, actor: Actor) {
       title: "連絡先を見る",
       description:
         "協力してくれるユーザー・VTuber などの連絡先。段階(candidate 候補 / contacted 声かけ済み / waiting 返事待ち / " +
-        "active 協力中 / passed 見送り)と、最後に連絡した日を返す。kind・status・query で絞れる。",
+        "active 協力中 / passed 見送り)、一言(summary)、詳細メモ(note)、連絡手段(links: X / Instagram / Discord / " +
+        "Messenger / LINE / メール など)、最後に連絡した日を返す。kind・status・via(連絡手段)・query で絞れる。",
       inputSchema: z.object({
         kind: z.enum(CONTACT_KIND).optional(),
         status: z.enum(CONTACT_STATUS).optional(),
-        query: z.string().optional().describe("名前・ID・メモの部分一致"),
+        via: z.enum(CONTACT_CHANNEL).optional().describe("その連絡手段を持っている人だけ"),
+        query: z.string().optional().describe("名前・一言・メモ・連絡手段の部分一致"),
       }),
       annotations: { readOnlyHint: true },
     },
-    async ({ kind, status, query }) => {
+    async ({ kind, status, via, query }) => {
       const q = query?.toLowerCase();
       const list = (await contacts.listContacts()).filter(
         (c) =>
           (!kind || c.kind === kind) &&
           (!status || c.status === status) &&
-          (!q || [c.name, c.handle, c.discord, c.email, c.note].filter(Boolean).join(" ").toLowerCase().includes(q)),
+          (!via || c.links.some((l) => l.channel === via)) &&
+          (!q ||
+            [c.name, c.summary, c.note, ...c.links.map((l) => l.value)].filter(Boolean).join(" ").toLowerCase().includes(q)),
       );
       return ok(list.map((c) => ({ ...c, owner: ACCOUNTS.find((a) => a.id === c.owner_id)?.name ?? null })));
     },
@@ -318,24 +329,24 @@ export function registerAimentTools(server: McpServer, actor: Actor) {
 
   const address = z
     .string()
-    .describe("X の ID や URL、Discord 名、メール、ページの URL。種類は自動で見分ける(address_type で指定も可)");
-  const addressType = z.enum(["x", "discord", "email", "url"]).optional();
-  const KEY = { x: "handle", discord: "discord", email: "email", url: "url" } as const;
+    .describe("X / Instagram の ID や URL、Discord 名、メール、ページの URL など。種類は自動で見分ける(address_type で指定も可)");
+  const addressType = z.enum(CONTACT_CHANNEL).optional().describe("連絡手段の種類。省くと自動で見分ける");
 
-  /** 連絡先の文字列を、どの列に入れるか決める */
-  function addressPatch(raw: string, type?: keyof typeof KEY) {
+  /** 貼られた文字と(あれば)指定の種類から、保存する連絡手段を決める */
+  function toLink(raw: string, type?: ContactChannel) {
     const found = detectAddress(raw);
-    if (!found) return {};
-    const key = type ? KEY[type] : found.key;
-    const value = type && KEY[type] !== found.key ? raw.trim() : found.value;
-    return { [key]: value } as Partial<contacts.ContactInput>;
+    if (!found && !type) throw new Error(`連絡手段として読めません: ${raw}`);
+    const channel = type ?? found!.key;
+    return { channel, value: type && type !== found?.key ? valueAs(type, raw) : found!.value };
   }
 
   server.registerTool(
     "create_contact",
     {
       title: "連絡先を足す",
-      description: "協力してくれそうな人を連絡先に足す。kind は user(ユーザー) / vtuber / other。",
+      description:
+        "協力してくれそうな人を連絡先に足す。kind は user(ユーザー) / vtuber / other。" +
+        "summary は一覧で常に見える一言、note は長めの詳細メモ。",
       inputSchema: z.object({
         name: z.string().min(1),
         kind: z.enum(CONTACT_KIND),
@@ -343,18 +354,20 @@ export function registerAimentTools(server: McpServer, actor: Actor) {
         address: address.optional(),
         address_type: addressType,
         owner: member.optional(),
+        summary: z.string().max(200).optional(),
         note: z.string().optional(),
       }),
     },
-    async ({ name, kind, status, address: a, address_type, owner, note }) => {
+    async ({ name, kind, status, address: a, address_type, owner, summary, note }) => {
       const id = await contacts.createContact(
         {
           name,
           kind: kind as ContactKind,
           status: status as ContactStatus | undefined,
           owner_id: resolveMember(owner ?? null)?.id ?? null,
+          summary: summary ?? null,
           note: note ?? null,
-          ...(a ? addressPatch(a, address_type) : {}),
+          links: a ? [toLink(a, address_type)] : [],
         },
         actor,
       );
@@ -368,20 +381,23 @@ export function registerAimentTools(server: McpServer, actor: Actor) {
       title: "連絡先を書きかえる",
       description:
         "連絡先の段階を進める(例: 声をかけた → contacted、返事待ち → waiting、協力が決まった → active)、" +
-        "連絡先を足す、担当や備考を変える。段階を contacted / waiting にすると最後に連絡した日が今日になる。" +
-        "note は上書きなので、追記したいときは今の内容に足して渡す。",
+        "連絡手段を足す(add_address)・消す(remove_link_id — list_contacts の links[].id)、担当・一言・詳細を変える。" +
+        "段階を contacted / waiting にすると最後に連絡した日が今日になる。" +
+        "summary は一覧で常に見える一言。note は上書きなので、追記したいときは今の内容に足して渡す。",
       inputSchema: z.object({
         contact_id: z.string(),
         status: z.enum(CONTACT_STATUS).optional(),
         name: z.string().min(1).optional(),
         kind: z.enum(CONTACT_KIND).optional(),
-        address: address.optional(),
+        add_address: address.optional(),
         address_type: addressType,
+        remove_link_id: z.string().optional(),
         owner: member.optional(),
+        summary: z.string().max(200).optional(),
         note: z.string().optional(),
       }),
     },
-    async ({ contact_id, status, name, kind, address: a, address_type, owner, note }) => {
+    async ({ contact_id, status, name, kind, add_address, address_type, remove_link_id, owner, summary, note }) => {
       if (!(await contacts.getContact(contact_id))) throw new Error(`連絡先が見つかりません: ${contact_id}`);
       await contacts.updateContact(
         contact_id,
@@ -390,11 +406,16 @@ export function registerAimentTools(server: McpServer, actor: Actor) {
           ...(name ? { name } : {}),
           ...(kind ? { kind: kind as ContactKind } : {}),
           ...(owner ? { owner_id: resolveMember(owner)!.id } : {}),
+          ...(summary !== undefined ? { summary } : {}),
           ...(note !== undefined ? { note } : {}),
-          ...(a ? addressPatch(a, address_type) : {}),
         },
         actor,
       );
+      if (add_address) {
+        const l = toLink(add_address, address_type);
+        await contacts.addContactLink(contact_id, l.channel, l.value, actor);
+      }
+      if (remove_link_id) await contacts.removeContactLink(remove_link_id, actor);
       return ok("書きかえました");
     },
   );

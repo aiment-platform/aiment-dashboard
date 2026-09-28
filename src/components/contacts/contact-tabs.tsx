@@ -1,8 +1,8 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import type { ContactKind } from "@/lib/constants";
-import { KIND_COLOR, KIND_LABEL } from "@/lib/contacts-ui";
+import type { ContactChannel, ContactKind } from "@/lib/constants";
+import { ADDRESS_LABEL, KIND_COLOR, KIND_LABEL } from "@/lib/contacts-ui";
 import { cn } from "@/lib/utils";
 
 /**
@@ -13,10 +13,15 @@ const TABS: (ContactKind | null)[] = [null, "vtuber", "user", "other"];
 
 export function ContactTabs({
   kind,
+  via,
+  viaCounts,
   q,
   counts,
 }: {
   kind: ContactKind | null;
+  /** 連絡手段での絞り込み */
+  via: ContactChannel | null;
+  viaCounts: { channel: ContactChannel; n: number }[];
   q: string;
   counts: Record<ContactKind, number> & { all: number };
 }) {
@@ -36,6 +41,7 @@ export function ContactTabs({
   const depth = { "--depth-x": "0px", "--depth-y": "3px", "--depth-color": "rgba(20,22,28,0.18)" } as React.CSSProperties;
 
   return (
+    <div className="space-y-2">
     <div className="flex items-center gap-1.5">
       {TABS.map((t) => {
         const active = kind === t;
@@ -66,6 +72,34 @@ export function ContactTabs({
         onBlur={(e) => go({ q: e.target.value || null })}
         data-testid="contact-search"
       />
+    </div>
+
+    {/* 連絡手段で絞る。持っている人がいる手段だけ出す */}
+    {viaCounts.length > 0 && (
+      <div className="flex flex-wrap items-center gap-1" data-testid="via-filter">
+        <span className="mr-1 text-[10.5px] font-bold text-muted-foreground">連絡手段</span>
+        {viaCounts.map(({ channel, n }) => {
+          const on = via === channel;
+          return (
+            <button
+              key={channel}
+              type="button"
+              onClick={() => go({ via: on ? null : channel })}
+              className={cn(
+                "rounded-[8px] border-2 px-2 py-0.5 text-[11px] font-bold",
+                on
+                  ? "border-transparent bg-[var(--color-toy-purple)] text-white"
+                  : "border-[rgba(20,22,28,0.12)] bg-white text-muted-foreground hover:border-[var(--color-toy-purple)]",
+              )}
+              aria-pressed={on}
+              data-testid={`via-${channel}`}
+            >
+              {ADDRESS_LABEL[channel]} <span className="num opacity-70">{n}</span>
+            </button>
+          );
+        })}
+      </div>
+    )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { listContacts } from "@/lib/services/contacts";
 import { listMembers } from "@/lib/services/members";
-import { CONTACT_KIND, type ContactKind, type ContactStatus } from "@/lib/constants";
+import { CONTACT_CHANNEL, CONTACT_KIND, type ContactChannel, type ContactKind, type ContactStatus } from "@/lib/constants";
 import { STATUS_LABEL } from "@/lib/contacts-ui";
 import { AddContact } from "@/components/contacts/add-contact";
 import { ContactRow } from "@/components/contacts/contact-row";
@@ -18,18 +18,21 @@ const ORDER: ContactStatus[] = ["waiting", "contacted", "candidate", "active", "
 export default async function ContactsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ kind?: string; q?: string }>;
+  searchParams: Promise<{ kind?: string; via?: string; q?: string }>;
 }) {
-  const { kind: rawKind, q } = await searchParams;
+  const { kind: rawKind, via: rawVia, q } = await searchParams;
   const kind = (CONTACT_KIND as readonly string[]).includes(rawKind ?? "") ? (rawKind as ContactKind) : null;
+  // 連絡手段での絞り込み(?via=instagram など)。その手段を持っている人だけ
+  const via = (CONTACT_CHANNEL as readonly string[]).includes(rawVia ?? "") ? (rawVia as ContactChannel) : null;
   const [all, members] = await Promise.all([listContacts(), listMembers()]);
   const active = members.filter((m) => m.is_active).map((m) => ({ id: m.id, name: m.name }));
 
   const needle = (q ?? "").trim().toLowerCase();
   const shown = all.filter((c) => {
     if (kind && c.kind !== kind) return false;
+    if (via && !c.links.some((l) => l.channel === via)) return false;
     if (needle) {
-      const hay = [c.name, c.handle, c.discord, c.email, c.note].filter(Boolean).join(" ").toLowerCase();
+      const hay = [c.name, c.summary, c.note, ...c.links.map((l) => l.value)].filter(Boolean).join(" ").toLowerCase();
       if (!hay.includes(needle)) return false;
     }
     return true;
@@ -43,6 +46,12 @@ export default async function ContactsPage({
     all: all.length,
     ...(Object.fromEntries(CONTACT_KIND.map((k) => [k, all.filter((c) => c.kind === k).length])) as Record<ContactKind, number>),
   };
+  // 連絡手段ごとの人数(いま開いている種類タブの中で数える)。0人の手段は出さない
+  const inKind = all.filter((c) => !kind || c.kind === kind);
+  const viaCounts = CONTACT_CHANNEL.map((ch) => ({
+    channel: ch,
+    n: inKind.filter((c) => c.links.some((l) => l.channel === ch)).length,
+  })).filter((x) => x.n > 0 || x.channel === via);
   const activeCount = all.filter((c) => c.status === "active").length;
   const waitingCount = all.filter((c) => c.status === "waiting").length;
 
@@ -55,7 +64,7 @@ export default async function ContactsPage({
         </p>
       </header>
 
-      <ContactTabs kind={kind} q={q ?? ""} counts={counts} />
+      <ContactTabs kind={kind} via={via} viaCounts={viaCounts} q={q ?? ""} counts={counts} />
 
       <AddContact fixedKind={kind} />
 
@@ -80,7 +89,7 @@ export default async function ContactsPage({
       ))}
 
       <p className="pt-4 text-[11px] leading-5 text-muted-foreground">
-        名前を押すと書きかえ、担当のマークを押すと担当を選べます。▾ で開くと連絡先の追加と備考。
+        名前・一言・連絡手段は押すとその場で書きかえ、担当のマークを押すと担当を選べます。▾ か行の空いている所で開くと、一言と詳細メモの欄が出ます。
         右の札から段階を変えると、「声かけ済み」「返事待ち」にした日が
         <strong className="font-bold">最後に連絡した日</strong>として自動で入ります。
       </p>

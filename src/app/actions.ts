@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getActor } from "@/lib/current-member";
-import { CONFIDENCE, CONTACT_KIND, CONTACT_STATUS, HEALTH, TASK_PRIORITY, TASK_STATUS } from "@/lib/constants";
+import { CONFIDENCE, CONTACT_CHANNEL, CONTACT_KIND, CONTACT_STATUS, HEALTH, TASK_PRIORITY, TASK_STATUS } from "@/lib/constants";
 import * as objectives from "@/lib/services/objectives";
 import * as workstreams from "@/lib/services/workstreams";
 import * as milestones from "@/lib/services/milestones";
@@ -531,11 +531,8 @@ const contactSchema = z.object({
   name: z.string().min(1).max(120),
   kind: z.enum(CONTACT_KIND).optional(),
   status: z.enum(CONTACT_STATUS).optional(),
-  handle: z.string().max(120).nullable().optional(),
-  discord: z.string().max(120).nullable().optional(),
-  email: z.string().max(200).nullable().optional(),
-  url: z.string().max(500).nullable().optional(),
-  note: z.string().max(4000).nullable().optional(),
+  summary: z.string().max(200).nullable().optional(),
+  note: z.string().max(8000).nullable().optional(),
   owner_id: z.string().nullable().optional(),
   last_contacted_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
 });
@@ -556,5 +553,30 @@ export async function updateContactAction(id: string, patch: Partial<z.infer<typ
 export async function deleteContactAction(id: string) {
   const { deleteContact } = await import("@/lib/services/contacts");
   await deleteContact(id, await getActor());
+  refresh();
+}
+
+// ---- 連絡手段(タグ) ------------------------------------------------------------
+
+export async function addContactLinkAction(contactId: string, channel: string, value: string) {
+  const { addContactLink } = await import("@/lib/services/contacts");
+  const id = await addContactLink(contactId, z.enum(CONTACT_CHANNEL).parse(channel), z.string().max(500).parse(value ?? ""), await getActor());
+  refresh();
+  return id;
+}
+
+export async function updateContactLinkAction(linkId: string, patch: { channel?: string; value?: string }) {
+  const { updateContactLink } = await import("@/lib/services/contacts");
+  await updateContactLink(
+    linkId,
+    z.object({ channel: z.enum(CONTACT_CHANNEL).optional(), value: z.string().max(500).optional() }).parse(patch),
+    await getActor(),
+  );
+  refresh();
+}
+
+export async function removeContactLinkAction(linkId: string) {
+  const { removeContactLink } = await import("@/lib/services/contacts");
+  await removeContactLink(linkId, await getActor());
   refresh();
 }

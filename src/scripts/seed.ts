@@ -52,6 +52,7 @@ async function main() {
   await db.delete(schema.workstreams);
   await db.delete(schema.objectives);
   await db.delete(schema.members);
+  await db.delete(schema.contactLinks);
   await db.delete(schema.contacts);
 
   // ---- メンバー = 決まった3アカウント(src/lib/accounts.ts が正) ----------------
@@ -255,10 +256,7 @@ async function main() {
     name,
     kind,
     status,
-    handle: null,
-    discord: null,
-    email: null,
-    url: null,
+    summary: null,
     note: null,
     ownerId: soya,
     lastContactedAt: null,
@@ -266,13 +264,35 @@ async function main() {
     updatedAt: ago(1),
     ...extra,
   });
-  await db.insert(schema.contacts).values([
-    ct("星野ルナ", "vtuber", "active", { handle: "hoshino_luna", note: "登録者3万人。初回セッションに出てくれた", lastContactedAt: day(-2) }),
-    ct("ねこみみチャンネル", "vtuber", "waiting", { handle: "nekomimi_ch", note: "コラボに前向き。9/20 に返事の予定", lastContactedAt: day(-5) }),
-    ct("田中さん", "user", "active", { discord: "tanaka#0421", note: "Discord のテスター1号。フィードバックが具体的", ownerId: futo }),
-    ct("鈴木さん", "user", "contacted", { email: "suzuki@example.com", lastContactedAt: day(-1), ownerId: futo }),
-    ct("VTuber事務所 A", "other", "candidate", { url: "https://example.com", note: "まだ声をかけていない。窓口を探す" }),
+  const people = [
+    ct("星野ルナ", "vtuber", "active", { summary: "登録者3万人・初回セッションに出てくれた", note: "雑談配信が中心。平日夜が動きやすい。次は2回目のセッションの日程を決める。", lastContactedAt: day(-2) }),
+    ct("ねこみみチャンネル", "vtuber", "waiting", { summary: "コラボに前向き。9/20 に返事の予定", lastContactedAt: day(-5) }),
+    ct("田中さん", "user", "active", { summary: "Discord のテスター1号", note: "フィードバックが具体的。改善案まで書いてくれる。", ownerId: futo }),
+    ct("鈴木さん", "user", "contacted", { lastContactedAt: day(-1), ownerId: futo }),
+    ct("VTuber事務所 A", "other", "candidate", { summary: "まだ声をかけていない。窓口を探す" }),
     ct("山田さん", "user", "passed", { note: "時間が取れないとのこと。落ち着いたら再度" }),
+  ];
+  await db.insert(schema.contacts).values(people);
+  // 連絡手段(タグ)
+  const link = (who: (typeof people)[number], channel: string, value: string, order: number) => ({
+    id: newId("cl"),
+    contactId: who.id,
+    channel,
+    value,
+    sortOrder: order,
+    createdAt: ago(20),
+  });
+  await db.insert(schema.contactLinks).values([
+    link(people[0], "x", "hoshino_luna", 0),
+    link(people[0], "youtube", "https://youtube.com/@hoshino_luna", 1),
+    link(people[0], "instagram", "hoshino.luna", 2),
+    link(people[0], "discord", "luna#0001", 3),
+    link(people[1], "x", "nekomimi_ch", 0),
+    link(people[1], "tiktok", "nekomimi_ch", 1),
+    link(people[2], "discord", "tanaka#0421", 0),
+    link(people[3], "email", "suzuki@example.com", 0),
+    link(people[3], "messenger", "https://m.me/suzuki.taro", 1),
+    link(people[4], "url", "https://example.com", 0),
   ]);
 
   console.log("seeded:");

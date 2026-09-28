@@ -74,3 +74,11 @@ export type ContactKind = (typeof CONTACT_KIND)[number];
  */
 export const CONTACT_STATUS = ["candidate", "contacted", "waiting", "active", "passed"] as const;
 export type ContactStatus = (typeof CONTACT_STATUS)[number];
+
+/**
+ * 連絡手段の種類(タグ)。並び順 = 選ぶときの並び。
+ * url は「どれにも当てはまらないページ」、other は電話番号・Bluesky など URL ですらないもの。
+ * other は自動判定では選ばれない(タグから手で選ぶ)。
+ */
+export const CONTACT_CHANNEL = ["x", "instagram", "tiktok", "youtube", "discord", "messenger", "line", "email", "url", "other"] as const;
+export type ContactChannel = (typeof CONTACT_CHANNEL)[number];

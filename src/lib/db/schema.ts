@@ -203,10 +203,8 @@ export const contacts = pgTable(
     name: text("name").notNull(),
     kind: text("kind").notNull().default("user"), // CONTACT_KIND
     status: text("status").notNull().default("candidate"), // CONTACT_STATUS
-    handle: text("handle"), // X(Twitter) の @なしID
-    discord: text("discord"),
-    email: text("email"),
-    url: text("url"), // YouTube など、その人のページ
+    // 一言(閉じていても見える短い説明)と、詳細(開いたときの長文)
+    summary: text("summary"),
     note: text("note"),
     ownerId: text("owner_id"), // 担当するメンバー
     lastContactedAt: text("last_contacted_at"), // 最後に連絡した日(YYYY-MM-DD)
@@ -214,4 +212,22 @@ export const contacts = pgTable(
     updatedAt: text("updated_at").notNull(),
   },
   (t) => [index("ct_status_idx").on(t.status), index("ct_kind_idx").on(t.kind)],
+);
+
+/**
+ * 連絡手段。1人に何個でも付けられる(X と Instagram と Discord…)。
+ * 以前は contacts に handle / discord / email / url の4列を持っていたが、
+ * 種類が増えるたびに列を足すことになるので、1行1手段の表に分けた。
+ */
+export const contactLinks = pgTable(
+  "contact_links",
+  {
+    id: text("id").primaryKey(),
+    contactId: text("contact_id").notNull(),
+    channel: text("channel").notNull(), // CONTACT_CHANNEL
+    value: text("value").notNull(), // X なら @なしID、それ以外はそのまま
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [index("cl_contact_idx").on(t.contactId), index("cl_channel_idx").on(t.channel)],
 );
