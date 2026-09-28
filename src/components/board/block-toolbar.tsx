@@ -5,6 +5,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useHistory } from "@/components/board/history";
 import {
   deleteBlockAction,
+  setBlockKindAction,
   setBlockStatusAction,
   setBlocksDoneAction,
   setBlocksImportantAction,
@@ -16,6 +17,7 @@ import {
 } from "@/app/actions";
 import type { PeriodBlock } from "@/lib/services/periods";
 import { cn } from "@/lib/utils";
+import { NOTE_FONT_DEFAULT, NOTE_FONT_SIZES } from "@/lib/whiteboard";
 
 /**
  * 選んだ積み木の右に出る道具箱。
@@ -80,7 +82,7 @@ export function BlockToolbar({
 
   return (
     <div
-      className="brick flex items-center gap-0.5 rounded-[13px] border-2 border-[rgba(20,22,28,0.12)] bg-white p-1"
+      className="brick flex w-max items-center gap-0.5 whitespace-nowrap rounded-[13px] border-2 border-[rgba(20,22,28,0.12)] bg-white p-1"
       style={{ "--depth-x": "0px", "--depth-y": "4px", "--depth-color": "rgba(20,22,28,0.18)" } as React.CSSProperties}
       onPointerDown={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
@@ -228,6 +230,24 @@ export function BlockToolbar({
         </svg>
       </button>
 
+      {/* メモにする(タスクではない書き込みに戻す) */}
+      <button
+        type="button"
+        onClick={() => {
+          const setKind = (kind: "task" | "note") => start(() => setBlockKindAction(block.id, kind));
+          setKind("note");
+          record({ label: "タスクをメモにした", undo: () => setKind("task"), redo: () => setKind("note") });
+        }}
+        className={BTN}
+        aria-label="メモにする"
+        title="メモにする(タスクではない書き込み。タスクに戻せば担当・期限もそのまま戻る)"
+        data-testid="block-to-note"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <rect x="3.5" y="6.5" width="17" height="11" rx="3" strokeDasharray="3 2.4" />
+        </svg>
+      </button>
+
       <span className="mx-0.5 h-5 w-px bg-border" />
 
       {/* できた */}
@@ -322,7 +342,7 @@ export function MultiToolbar({
 
   return (
     <div
-      className="brick flex items-center gap-0.5 rounded-[13px] border-2 border-[rgba(20,22,28,0.12)] bg-white p-1"
+      className="brick flex w-max items-center gap-0.5 whitespace-nowrap rounded-[13px] border-2 border-[rgba(20,22,28,0.12)] bg-white p-1"
       style={{ "--depth-x": "0px", "--depth-y": "4px", "--depth-color": "rgba(20,22,28,0.18)" } as React.CSSProperties}
       onPointerDown={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
@@ -432,6 +452,115 @@ export function MultiToolbar({
         aria-label="まとめて片づける"
         title="まとめて片づける"
         data-testid="multi-delete"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round">
+          <path d="M6 6l12 12M18 6L6 18" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+
+/**
+ * メモを選んだときの道具箱。メモは担当・期限・できたを持たないので、
+ * 「タスクにする」「複製」「片づける」だけ。
+ */
+export function NoteToolbar({
+  block,
+  onDuplicate,
+  onHide,
+  onShow,
+}: {
+  block: PeriodBlock;
+  onDuplicate: () => void;
+  onHide: (id: string) => void;
+  onShow: (id: string) => void;
+}) {
+  const [, start] = useTransition();
+  const { record } = useHistory();
+  const setKind = (kind: "task" | "note") => start(() => setBlockKindAction(block.id, kind));
+  return (
+    <div
+      className="brick flex w-max items-center gap-0.5 whitespace-nowrap rounded-[13px] border-2 border-[rgba(20,22,28,0.12)] bg-white p-1"
+      style={{ "--depth-x": "0px", "--depth-y": "4px", "--depth-color": "rgba(20,22,28,0.18)" } as React.CSSProperties}
+      onPointerDown={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+      data-testid="note-toolbar"
+    >
+      <span className="px-1.5 text-[11px] font-bold text-muted-foreground">メモ</span>
+      <span className="mx-0.5 h-5 w-px bg-border" />
+      {/* 文字の大きさ */}
+      {NOTE_FONT_SIZES.map((f) => {
+        const now = block.font_size ?? NOTE_FONT_DEFAULT;
+        const on = now === f.px;
+        return (
+          <button
+            key={f.px}
+            type="button"
+            onClick={() => {
+              if (on) return;
+              const before = block.font_size;
+              const next = f.px === NOTE_FONT_DEFAULT ? null : f.px;
+              const setSize = (v: number | null) => start(() => updateBlockAction(block.id, { font_size: v }));
+              setSize(next);
+              record({ label: "メモの文字の大きさを変えた", undo: () => setSize(before), redo: () => setSize(next) });
+            }}
+            className={cn(
+              BTN,
+              "w-auto min-w-[30px] px-1.5 font-bold",
+              on && "bg-[var(--color-toy-purple)] text-white hover:bg-[var(--color-toy-purple)] hover:text-white",
+            )}
+            style={{ fontSize: 9 + NOTE_FONT_SIZES.indexOf(f) * 2 }}
+            aria-pressed={on}
+            title={`文字を${f.label}にする`}
+            data-testid={`note-size-${f.px}`}
+          >
+            {f.label}
+          </button>
+        );
+      })}
+      <span className="mx-0.5 h-5 w-px bg-border" />
+      <button
+        type="button"
+        onClick={() => {
+          setKind("task");
+          record({ label: "メモをタスクにした", undo: () => setKind("note"), redo: () => setKind("task") });
+        }}
+        className={cn(BTN, "w-auto px-2 text-[11px] font-bold")}
+        title="タスクにする(担当・期限・できたを持てるようになる)"
+        data-testid="note-to-task"
+      >
+        タスクにする
+      </button>
+      <button type="button" onClick={onDuplicate} className={BTN} aria-label="複製" title="複製 (⌘D / ⌥ドラッグ)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="9" y="9" width="12" height="12" rx="2.5" />
+          <path d="M6 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V6" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          const before = block.status;
+          const drop = () => {
+            onHide(block.id);
+            start(() => deleteBlockAction(block.id));
+          };
+          drop();
+          record({
+            label: "メモを片づけた",
+            undo: () => {
+              onShow(block.id);
+              start(() => setBlockStatusAction(block.id, before));
+            },
+            redo: drop,
+          });
+        }}
+        className={cn(BTN, "hover:text-destructive")}
+        aria-label="片づける"
+        title="片づける"
+        data-testid="note-delete"
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round">
           <path d="M6 6l12 12M18 6L6 18" />

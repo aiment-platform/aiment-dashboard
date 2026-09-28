@@ -1,4 +1,4 @@
-import { ACCOUNTS } from "./accounts";
+import { ASSIGNEES } from "./accounts";
 
 /**
  * ホワイトボード「積み木」の純関数まとめ。
@@ -42,7 +42,7 @@ export const MEMBER_COLORS = [
  */
 export function memberColor(memberId: string | null | undefined): string {
   if (!memberId) return "#c9c9c9";
-  const fixed = ACCOUNTS.find((a) => a.id === memberId);
+  const fixed = ASSIGNEES.find((a) => a.id === memberId);
   if (fixed) return fixed.color;
   let h = 0;
   for (let i = 0; i < memberId.length; i++) h = (h * 31 + memberId.charCodeAt(i)) >> 0;
@@ -103,6 +103,35 @@ export function blockWidth(title: string, extras = 0): number {
   return Math.round(Math.min(640, Math.max(150, 98 + units * 7.8 + extras)));
 }
 
+/** メモの文字の大きさの段階(px)。null はふつう(14) */
+export const NOTE_FONT_SIZES = [
+  { label: "小", px: 12 },
+  { label: "中", px: 14 },
+  { label: "大", px: 20 },
+  { label: "特大", px: 28 },
+] as const;
+export const NOTE_FONT_DEFAULT = 14;
+
+/**
+ * メモの大きさ。改行(Shift+Enter)で行が増え、文字を大きくすると広がる。
+ * 積み方の計算・選択枠・矢印の端がみな同じ値を使うよう、ここで1つだけ決める。
+ *   幅 = いちばん長い行の文字数 × 1文字の幅 + 左右の余白
+ *   高さ = 行数 × 行の高さ + 上下の余白(1行なら積み木と同じ高さ)
+ */
+export function noteSize(title: string, fontSize: number | null): { width: number; height: number } {
+  const px = fontSize ?? NOTE_FONT_DEFAULT;
+  const lines = title.split("\n");
+  let units = 0;
+  for (const line of lines) {
+    let u = 0;
+    for (const ch of line) u += /[\x20-\x7e]/.test(ch) ? 1 : 2;
+    units = Math.max(units, u);
+  }
+  const width = Math.round(Math.min(900, Math.max(120, units * px * 0.56 + 40)));
+  const height = Math.round(Math.max(BLOCK_H, lines.length * px * 1.4 + 26));
+  return { width, height };
+}
+
 /**
  * 面に追加で乗るチップのぶんの幅。積み方の計算と描画で同じ値を使う。
  * 取り組み中の名札は面の外(右上)に乗るので、ここには入れない。
@@ -118,9 +147,10 @@ export function defaultBlockPosition(index: number): { x: number; y: number } {
   return { x: 60 + col * 320, y: 40 + row * 300 + col * 110 };
 }
 
-/** ドラッグ結果をグリッドに吸着 + 盤の外(負の座標)に出さない */
+/** ドラッグ結果をグリッドに吸着する */
 export function snap(v: number): number {
-  return Math.max(0, Math.round(v / GRID) * GRID);
+  // 紙は上下左右どこまでも広がる(負の座標も使う)。-0 は 0 にそろえる
+  return Math.round(v / GRID) * GRID + 0;
 }
 
 /** 展開したときにブロックが占める高さ(枝の本数ぶん下に伸びる) */

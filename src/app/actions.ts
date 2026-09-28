@@ -329,6 +329,7 @@ const blockSchema = z.object({
   y: z.number(),
   owner_id: z.string().optional(),
   due_date: z.string().optional(),
+  kind: z.enum(["task", "note"]).optional(),
 });
 
 export async function createBlockAction(input: z.infer<typeof blockSchema>) {
@@ -345,6 +346,9 @@ export async function createBlockAction(input: z.infer<typeof blockSchema>) {
       due_date: p.due_date || null,
       board_x: p.x,
       board_y: p.y,
+      kind: p.kind ?? "task",
+      // メモには担当者を付けない
+      ...(p.kind === "note" ? { owner_id: null } : {}),
     },
     actor,
   );
@@ -354,8 +358,9 @@ export async function createBlockAction(input: z.infer<typeof blockSchema>) {
 
 export async function updateBlockAction(
   id: string,
-  patch: { title?: string; due_date?: string | null; owner_id?: string | null; important?: boolean },
+  patch: { title?: string; due_date?: string | null; owner_id?: string | null; important?: boolean; font_size?: number | null },
 ) {
+  if (patch.font_size != null) patch.font_size = z.number().int().min(8).max(96).parse(patch.font_size);
   await milestones.updateMilestone(id, patch, await getActor());
   refresh();
 }
@@ -578,5 +583,76 @@ export async function updateContactLinkAction(linkId: string, patch: { channel?:
 export async function removeContactLinkAction(linkId: string) {
   const { removeContactLink } = await import("@/lib/services/contacts");
   await removeContactLink(linkId, await getActor());
+  refresh();
+}
+
+// ---- 盤の上の形(直線・ペン・セクション)と依存の矢印 --------------------------------
+
+const pointSchema = z.tuple([z.number(), z.number()]);
+const itemSchema = z.object({
+  id: z.string().optional(),
+  period_id: z.string().min(1),
+  type: z.enum(["line", "pen", "section"]),
+  x: z.number(),
+  y: z.number(),
+  w: z.number().optional(),
+  h: z.number().optional(),
+  color: z.string().max(40).nullable().optional(),
+  points: z.array(pointSchema).max(4000).optional(),
+  title: z.string().max(200).nullable().optional(),
+});
+const itemPatchSchema = z.array(
+  z.object({
+    id: z.string().min(1),
+    x: z.number().optional(),
+    y: z.number().optional(),
+    w: z.number().optional(),
+    h: z.number().optional(),
+    color: z.string().max(40).nullable().optional(),
+    title: z.string().max(200).nullable().optional(),
+  }),
+);
+
+export async function createItemAction(input: z.infer<typeof itemSchema>) {
+  const { createItem } = await import("@/lib/services/board-items");
+  const item = await createItem(itemSchema.parse(input), await getActor());
+  refresh();
+  return item;
+}
+
+export async function updateItemsAction(patches: z.infer<typeof itemPatchSchema>) {
+  const { updateItems } = await import("@/lib/services/board-items");
+  const writtenAt = await updateItems(itemPatchSchema.parse(patches));
+  refresh();
+  return { written_at: writtenAt };
+}
+
+export async function deleteItemsAction(ids: string[]) {
+  const { deleteItems } = await import("@/lib/services/board-items");
+  await deleteItems(z.array(z.string().min(1)).max(500).parse(ids), await getActor());
+  refresh();
+}
+
+export async function createLinkAction(fromId: string, toId: string, id?: string) {
+  const { createLink } = await import("@/lib/services/board-items");
+  const link = await createLink(z.string().min(1).parse(fromId), z.string().min(1).parse(toId), await getActor(), id);
+  refresh();
+  return link;
+}
+
+export async function deleteLinkAction(id: string) {
+  const { deleteLink } = await import("@/lib/services/board-items");
+  await deleteLink(z.string().min(1).parse(id), await getActor());
+  refresh();
+}
+
+/** メモ ⇄ タスク を切り替える */
+export async function setBlockKindAction(id: string, kind: "task" | "note") {
+  const { getDb, schema: s } = await import("@/lib/db");
+  const { eq } = await import("drizzle-orm");
+  await getDb()
+    .update(s.milestones)
+    .set({ kind: z.enum(["task", "note"]).parse(kind), updatedAt: new Date().toISOString() })
+    .where(eq(s.milestones.id, id));
   refresh();
 }

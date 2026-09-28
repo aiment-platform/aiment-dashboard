@@ -41,7 +41,7 @@ const call = async (name, args = {}) => {
 
 // ---- 読む ----
 const { tools } = await client.listTools();
-ok("正しい鍵ならツールが見える(13個)", tools.length === 13, tools.map((t) => t.name).join(","));
+ok("正しい鍵ならツールが見える(15個)", tools.length === 15, tools.map((t) => t.name).join(","));
 ok("読む道具には読み取り専用の印が付いている", tools.filter((t) => t.annotations?.readOnlyHint).length === 4);
 const brief = await call("get_briefing");
 ok("get_briefing は今の期間を返す", typeof brief.period?.title === "string", brief.period?.title);

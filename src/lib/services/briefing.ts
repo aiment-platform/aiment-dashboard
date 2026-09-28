@@ -1,4 +1,4 @@
-import { accountById } from "@/lib/accounts";
+import { ASSIGNEES, isAssignedTo } from "@/lib/accounts";
 import { daysAgo } from "@/lib/contacts-ui";
 import { listContacts } from "./contacts";
 import { defaultPeriodId, getPeriodBoard, type PeriodBlock } from "./periods";
@@ -100,22 +100,52 @@ export async function getBriefing(opts: { member?: string | null; periodId?: str
     listContacts(),
   ]);
 
-  const all = board?.blocks ?? [];
+  // メモ(タスクではないもの)はやることではないので数えない
+  const all = (board?.blocks ?? []).filter((b) => b.kind !== "note");
   const open = all.filter((b) => b.status !== "achieved");
+
+  // 依存の矢印: A → B は「A が終わってから B」。
+  // まだ終わっていない前提がある積み木は後回し、待たれている積み木は先に。
+  const info = new Map<string, { title: string; done: boolean }>();
+  for (const b of board?.blocks ?? []) info.set(b.id, { title: b.title, done: b.status === "achieved" });
+  for (const [id, o] of Object.entries(board?.outside ?? {})) info.set(id, { title: o.title, done: o.done });
+  const depend = (b: PeriodBlock) => {
+    const reasons: string[] = [];
+    let score = 0;
+    for (const l of board?.links ?? []) {
+      if (l.to_id === b.id) {
+        const pre = info.get(l.from_id);
+        if (pre && !pre.done) {
+          score -= 25;
+          reasons.push(`先に「${pre.title}」が要る(まだ終わっていない)`);
+        }
+      }
+      if (l.from_id === b.id) {
+        const next = info.get(l.to_id);
+        if (next && !next.done) {
+          score += 20;
+          reasons.push(`「${next.title}」がこれを待っている`);
+        }
+      }
+    }
+    return { score, reasons };
+  };
+  // Both の仕事は Soya にも Futo にも数える
   const mine = (b: PeriodBlock) =>
-    !member || b.owner?.id === member.id || b.workers.some((w) => w.id === member.id);
+    !member || isAssignedTo(b.owner?.id, member.id) || b.workers.some((w) => w.id === member.id);
 
   const blocks: BriefingBlock[] = open
     .filter(mine)
     .map((b) => {
-      const { score, reasons } = scoreBlock(b, today);
+      const base = scoreBlock(b, today);
+      const dep = depend(b);
       return {
         id: b.id,
         title: b.title,
         owner: b.owner?.name ?? null,
         due_date: b.due_date,
-        score,
-        reasons,
+        score: base.score + dep.score,
+        reasons: [...base.reasons, ...dep.reasons],
         subtasks_left: b.subtasks.filter((s) => !s.done).map((s) => ({ id: s.id, title: s.title })),
         working: b.workers.map((w) => w.name),
       };
@@ -123,7 +153,7 @@ export async function getBriefing(opts: { member?: string | null; periodId?: str
     .sort((a, b) => b.score - a.score || (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999"));
 
   const people: BriefingContact[] = contacts
-    .filter((c) => !member || c.owner_id === member.id)
+    .filter((c) => !member || isAssignedTo(c.owner_id, member.id))
     .map((c) => {
       const since = daysAgo(c.last_contacted_at);
       const reasons: string[] = [];
@@ -135,7 +165,7 @@ export async function getBriefing(opts: { member?: string | null; periodId?: str
         name: c.name,
         kind: c.kind,
         status: c.status,
-        owner: accountById(c.owner_id)?.name ?? null,
+        owner: ASSIGNEES.find((a) => a.id === c.owner_id)?.name ?? null,
         days_since_contact: since,
         reasons,
       };
@@ -166,9 +196,7 @@ export async function getBriefing(opts: { member?: string | null; periodId?: str
 export function resolveMember(v: string | null): { id: string; name: string } | null {
   if (!v) return null;
   const t = v.trim().toLowerCase();
-  const byId = accountById(v.trim());
-  if (byId) return byId;
-  const byName = accountById(`mem_${t}`);
-  if (byName) return byName;
-  throw new Error(`知らないメンバー: ${v}(Soya / Futo / Other のどれか)`);
+  const hit = ASSIGNEES.find((a) => a.id === v.trim() || a.name.toLowerCase() === t);
+  if (hit) return hit;
+  throw new Error(`知らないメンバー: ${v}(${ASSIGNEES.map((a) => a.name).join(" / ")} のどれか)`);
 }

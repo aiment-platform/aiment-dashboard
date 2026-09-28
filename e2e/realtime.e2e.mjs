@@ -62,8 +62,8 @@ ok("相手が盤の外へ出ても、最後の位置に矢印が残る", (await 
 // ---- 矢印は紙の座標(相手がパンしても自分の紙の上で正しい場所) ----
 const before = await cursors(soya).first().boundingBox();
 await soya.keyboard.down("Space");
-await soya.mouse.move(900, 700); await soya.mouse.down();
-await soya.mouse.move(700, 600, { steps: 8 }); await soya.mouse.up();
+await soya.mouse.move(900, 500); await soya.mouse.down(); // 右下の操作欄を避ける
+await soya.mouse.move(700, 400, { steps: 8 }); await soya.mouse.up();
 await soya.keyboard.up("Space");
 await settle(soya, 400);
 const after = await cursors(soya).first().boundingBox();

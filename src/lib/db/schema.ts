@@ -74,6 +74,10 @@ export const milestones = pgTable(
     parentId: text("parent_id"),
     // 手で立てた「重要」の旗。0 = 期限とブロッカーから自動で決める。
     important: integer("important").notNull().default(0),
+    // task = ふつうの積み木 / note = タスクではないメモ(点線・半透明。担当・期限・できたは持たない)
+    kind: text("kind").notNull().default("task"),
+    // メモの文字の大きさ(px)。null = ふつう。タスクでは使わない
+    fontSize: integer("font_size"),
     title: text("title").notNull(), // "30 Indonesian users answered the survey"
     targetValue: doublePrecision("target_value").notNull(), // binary milestone → 1
     currentValue: doublePrecision("current_value").notNull().default(0),
@@ -230,4 +234,43 @@ export const contactLinks = pgTable(
     createdAt: text("created_at").notNull(),
   },
   (t) => [index("cl_contact_idx").on(t.contactId), index("cl_channel_idx").on(t.channel)],
+);
+
+/**
+ * 盤の上の「積み木ではないもの」: 直線・ペンの線・セクション(囲い)。
+ * 形ごとの細かい情報(線の点列、セクションの見出し)は data に JSON で持つ。
+ * 座標は紙の座標。線は x,y を原点に、点列を相対で持つ(動かすときは x,y だけ変えればよい)。
+ */
+export const boardItems = pgTable(
+  "board_items",
+  {
+    id: text("id").primaryKey(),
+    objectiveId: text("objective_id").notNull(), // どの期間(盤)の上にあるか
+    type: text("type").notNull(), // BOARD_ITEM_TYPE: line | pen | section
+    x: doublePrecision("x").notNull(),
+    y: doublePrecision("y").notNull(),
+    w: doublePrecision("w").notNull().default(0),
+    h: doublePrecision("h").notNull().default(0),
+    color: text("color"),
+    data: text("data").notNull().default("{}"),
+    createdBy: text("created_by"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (t) => [index("bi_objective_idx").on(t.objectiveId)],
+);
+
+/**
+ * 依存の矢印。「from が終わったら to に進める」。
+ * 期間をまたいでもよい(分割画面で、別の期間の積み木へ引ける)。
+ */
+export const blockLinks = pgTable(
+  "block_links",
+  {
+    id: text("id").primaryKey(),
+    fromId: text("from_id").notNull(),
+    toId: text("to_id").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [index("bl_from_idx").on(t.fromId), index("bl_to_idx").on(t.toId)],
 );

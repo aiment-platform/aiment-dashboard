@@ -16,7 +16,7 @@ import { eq } from "drizzle-orm";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { Liveblocks } from "@liveblocks/node";
 import { getDb, schema } from "@/lib/db";
-import { ACCOUNTS } from "@/lib/accounts";
+import { ACCOUNTS, ASSIGNEES } from "@/lib/accounts";
 import {
   CONTACT_CHANNEL,
   CONTACT_KIND,
@@ -28,12 +28,13 @@ import {
 import { detectAddress, valueAs } from "@/lib/contacts-ui";
 import type { Actor } from "@/lib/services/activity";
 import { getBriefing, resolveMember } from "@/lib/services/briefing";
+import * as boardItems from "@/lib/services/board-items";
 import * as contacts from "@/lib/services/contacts";
 import * as milestones from "@/lib/services/milestones";
 import * as periods from "@/lib/services/periods";
 import * as tasks from "@/lib/services/tasks";
 
-const MEMBER_HINT = `メンバーは ${ACCOUNTS.map((a) => a.name).join(" / ")} の名前で指定する`;
+const MEMBER_HINT = `メンバーは ${ASSIGNEES.map((a) => a.name).join(" / ")} の名前で指定する(Both = 二人で持つ)`;
 const member = z.string().describe(MEMBER_HINT);
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe("YYYY-MM-DD");
 
@@ -72,6 +73,14 @@ async function notifyBoard(periodId: string | null) {
   }
 }
 
+/** メモ(タスクではない書き込み)に、タスクにしか無い操作をしようとしたら断る */
+async function mustBeTask(id: string, what: string) {
+  const m = (await getDb().select().from(schema.milestones).where(eq(schema.milestones.id, id)))[0];
+  if (m?.kind === "note") {
+    throw new Error(`これはメモ(タスクではない書き込み)なので${what}は持てません。タスクとして扱うなら盤で「タスクにする」を押してください`);
+  }
+}
+
 async function mustBlock(id: string) {
   const p = await periodOfBlock(id);
   if (!p) throw new Error(`積み木が見つかりません: ${id}(get_board で id を確かめてください)`);
@@ -91,7 +100,8 @@ export function registerAimentTools(server: McpServer, actor: Actor) {
         "今の期間で「手をつけるべき積み木」と「連絡すべき相手」を、理由つき・目安の優先度順で返す。" +
         "『何からやる？』『今日のタスクは？』『いま何が詰まってる？』と聞かれたら最初にこれを使う。" +
         "理由(期限切れ・期限が近い・重要・止まっている・取り組み中・返事待ちが長い など)を根拠として答えること。" +
-        "member を渡すとその人の担当・取り組み中だけに絞る。",
+        "member を渡すとその人の担当・取り組み中だけに絞る(担当が Both の積み木は Soya にも Futo にも入る)。" +
+        "依存の矢印も理由に入る: 先に終わっていない前提がある積み木は後回し、ほかが待っている積み木は先に。",
       inputSchema: z.object({ member: member.optional() }),
       annotations: { readOnlyHint: true },
     },
@@ -116,7 +126,9 @@ export function registerAimentTools(server: McpServer, actor: Actor) {
       description:
         "ある期間の盤をまるごと返す: 期間の目標と、全部の積み木(担当・期限・状態・重要・取り組み中の人・サブタスク)。" +
         "period_id を省くと今日の期間。積み木やサブタスクを書きかえる前に id を確かめるのにも使う。" +
-        "status が achieved の積み木は完了済み。",
+        "status が achieved の積み木は完了済み。kind が note のものはタスクではないメモ(担当・期限・完了を持たない)。" +
+        "depends_on は「先に終わっている必要がある積み木」、blocks は「これを待っている積み木」(依存の矢印)。" +
+        "sections は盤の上の囲い(名前つきの枠)で、contains にその中の積み木が入る。",
       inputSchema: z.object({ period_id: z.string().optional() }),
       annotations: { readOnlyHint: true },
     },
@@ -125,10 +137,28 @@ export function registerAimentTools(server: McpServer, actor: Actor) {
       if (!id) return ok("まだ期間がありません");
       const board = await periods.getPeriodBoard(id);
       if (!board) throw new Error(`期間が見つかりません: ${id}`);
+      const name = (bid: string) =>
+        board.blocks.find((x) => x.id === bid)?.title ?? board.outside[bid]?.title ?? bid;
+      const ref = (bid: string) => ({
+        id: bid,
+        title: name(bid),
+        done: board.blocks.find((x) => x.id === bid)?.status === "achieved" || Boolean(board.outside[bid]?.done),
+        ...(board.outside[bid] ? { period: board.outside[bid].period_title } : {}),
+      });
       return ok({
         period: board.period,
+        sections: board.items
+          .filter((i) => i.type === "section")
+          .map((sct) => ({
+            id: sct.id,
+            title: sct.title,
+            contains: board.blocks
+              .filter((b) => b.x !== null && b.y !== null && b.x >= sct.x && b.x <= sct.x + sct.w && b.y >= sct.y && b.y <= sct.y + sct.h)
+              .map((b) => b.id),
+          })),
         blocks: board.blocks.map((b) => ({
           id: b.id,
+          kind: b.kind,
           title: b.title,
           status: b.status,
           owner: b.owner?.name ?? null,
@@ -137,6 +167,8 @@ export function registerAimentTools(server: McpServer, actor: Actor) {
           working: b.workers.map((w) => w.name),
           stacked_on: b.parent_id,
           subtasks: b.subtasks.map((s) => ({ id: s.id, title: s.title, done: s.done })),
+          depends_on: board.links.filter((l) => l.to_id === b.id).map((l) => ref(l.from_id)),
+          blocks: board.links.filter((l) => l.from_id === b.id).map((l) => ref(l.to_id)),
         })),
       });
     },
@@ -168,7 +200,7 @@ export function registerAimentTools(server: McpServer, actor: Actor) {
           (!q ||
             [c.name, c.summary, c.note, ...c.links.map((l) => l.value)].filter(Boolean).join(" ").toLowerCase().includes(q)),
       );
-      return ok(list.map((c) => ({ ...c, owner: ACCOUNTS.find((a) => a.id === c.owner_id)?.name ?? null })));
+      return ok(list.map((c) => ({ ...c, owner: ASSIGNEES.find((a) => a.id === c.owner_id)?.name ?? null })));
     },
   );
 
@@ -178,25 +210,47 @@ export function registerAimentTools(server: McpServer, actor: Actor) {
     "create_block",
     {
       title: "積み木を置く",
-      description: "盤に新しい積み木(やること)を置く。period_id を省くと今日の期間。置いた積み木の id を返す。",
+      description:
+        "盤に新しい積み木(やること)を置く。period_id を省くと今日の期間。置いた積み木の id を返す。" +
+        "タスクではない書き込み(補足・アイデア・見出しなど)は kind=note にする(点線のメモになり、担当・期限は付かない)。" +
+        "owner を省いたタスクは、盤ではその期間の既定の担当者(ふつうは Soya)として表示される。二人で持つなら Both。",
       inputSchema: z.object({
         title: z.string().min(1),
+        kind: z.enum(["task", "note"]).optional(),
         period_id: z.string().optional(),
         owner: member.optional(),
         due_date: date.optional(),
         important: z.boolean().optional(),
       }),
     },
-    async ({ title, period_id, owner, due_date, important }) => {
+    async ({ title, kind, period_id, owner, due_date, important }) => {
       const pid = period_id ?? (await periods.defaultPeriodId());
       if (!pid) throw new Error("期間がありません。先に盤で期間を作ってください");
-      const who = resolveMember(owner ?? null);
-      const ws = await periods.ensureDefaultWorkstream(pid, who?.id ?? ACCOUNTS[0].id);
+      const note = kind === "note";
+      const who = note ? null : resolveMember(owner ?? null);
+      const [ws, board] = await Promise.all([
+        periods.ensureDefaultWorkstream(pid, who?.id ?? ACCOUNTS[0].id),
+        periods.getPeriodBoard(pid),
+      ]);
+      // 置き場所: いま紙に置いてある積み木のいちばん下の、さらに下(ほかの積み木に重ならないように)
+      const roots = (board?.blocks ?? []).filter((b) => b.x !== null && b.y !== null);
+      const spot = roots.length
+        ? { x: Math.min(...roots.map((b) => b.x!)), y: Math.max(...roots.map((b) => b.y!)) + 160 }
+        : { x: 60, y: 60 };
       const id = await milestones.createMilestone(
-        { workstream_id: ws, title, target_value: 1, owner_id: who?.id ?? null, due_date: due_date ?? null },
+        {
+          board_x: spot.x,
+          board_y: spot.y,
+          workstream_id: ws,
+          title,
+          target_value: 1,
+          owner_id: who?.id ?? null,
+          due_date: note ? null : (due_date ?? null),
+          kind: note ? "note" : "task",
+        },
         actor,
       );
-      if (important) await milestones.updateMilestone(id, { important: true }, actor);
+      if (important && !note) await milestones.updateMilestone(id, { important: true }, actor);
       await notifyBoard(pid);
       return ok({ id, message: `「${title}」を置きました` });
     },
@@ -221,6 +275,9 @@ export function registerAimentTools(server: McpServer, actor: Actor) {
     },
     async ({ block_id, title, owner, clear_owner, due_date, clear_due, important }) => {
       const pid = await mustBlock(block_id);
+      if (owner !== undefined || due_date !== undefined || important !== undefined) {
+        await mustBeTask(block_id, "担当・期限・重要の旗");
+      }
       const patch: Parameters<typeof milestones.updateMilestone>[1] = {};
       if (title !== undefined) patch.title = title;
       if (owner !== undefined) patch.owner_id = resolveMember(owner)!.id;
@@ -243,6 +300,7 @@ export function registerAimentTools(server: McpServer, actor: Actor) {
     },
     async ({ block_id, done }) => {
       const pid = await mustBlock(block_id);
+      await mustBeTask(block_id, "「できた」");
       const row = (await getDb().select().from(schema.milestones).where(eq(schema.milestones.id, block_id)))[0];
       await milestones.updateMilestoneProgress(block_id, done ? row.targetValue : 0, actor, { skip_update_row: true });
       await notifyBoard(pid);
@@ -278,6 +336,46 @@ export function registerAimentTools(server: McpServer, actor: Actor) {
       await milestones.setMilestoneStatus(block_id, restore ? "not_started" : "dropped", actor);
       await notifyBoard(pid);
       return ok(restore ? "戻しました" : "片づけました");
+    },
+  );
+
+  // ==== 書く: 依存の矢印 ====
+
+  server.registerTool(
+    "link_blocks",
+    {
+      title: "依存の矢印をつなぐ",
+      description:
+        "「from が終わってから to」という依存の矢印を引く(盤では from → to の矢印になる)。" +
+        "期間(フェーズ)をまたいでもよい。同じ矢印がすでにあれば何もしない。" +
+        "輪になる矢印(to から矢印をたどると from に戻る)はエラーで断る。",
+      inputSchema: z.object({ from_block_id: z.string(), to_block_id: z.string() }),
+    },
+    async ({ from_block_id, to_block_id }) => {
+      const [a, b] = await Promise.all([mustBlock(from_block_id), mustBlock(to_block_id)]);
+      const link = await boardItems.createLink(from_block_id, to_block_id, actor);
+      if (!link.created) return ok({ id: link.id, message: "その矢印はもうつながっています(何もしませんでした)" });
+      await Promise.all([notifyBoard(a), a !== b ? notifyBoard(b) : null]);
+      return ok({ id: link.id, message: "矢印をつなぎました" });
+    },
+  );
+
+  server.registerTool(
+    "unlink_blocks",
+    {
+      title: "依存の矢印を外す",
+      description: "from → to の依存の矢印を外す。",
+      inputSchema: z.object({ from_block_id: z.string(), to_block_id: z.string() }),
+      annotations: { destructiveHint: true },
+    },
+    async ({ from_block_id, to_block_id }) => {
+      const [a, b] = await Promise.all([mustBlock(from_block_id), mustBlock(to_block_id)]);
+      const links = await boardItems.listLinks([from_block_id]);
+      const hit = links.find((l) => l.from_id === from_block_id && l.to_id === to_block_id);
+      if (!hit) return ok("その矢印はありません");
+      await boardItems.deleteLink(hit.id, actor);
+      await Promise.all([notifyBoard(a), a !== b ? notifyBoard(b) : null]);
+      return ok("矢印を外しました");
     },
   );
 

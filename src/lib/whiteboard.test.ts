@@ -3,6 +3,7 @@ import {
   blockExtrasWidth,
   blockTone,
   blockWidth,
+  noteSize,
   canvasExtent,
   defaultBlockPosition,
   expandedHeight,
@@ -86,7 +87,8 @@ describe("defaultBlockPosition", () => {
 
 describe("snap", () => {
   it("10px グリッドに吸着", () => expect(snap(123)).toBe(120));
-  it("負の座標は 0 に丸める", () => expect(snap(-40)).toBe(0));
+  it("負の座標もそのまま使える(紙は左・上にも広がる)", () => expect(snap(-43)).toBe(-40));
+  it("-0 にならない", () => expect(snap(-2)).toBe(0));
 });
 
 describe("expandedHeight", () => {
@@ -160,4 +162,12 @@ describe("isUrgentBlock", () => {
   it("できあがったものは重要にならない(旗が立っていても)", () => {
     expect(isUrgentBlock({ ...base, status: "achieved", important: true, daysLeft: -9 })).toBe(false);
   });
+});
+
+describe("noteSize(メモの大きさ)", () => {
+  it("1行なら積み木と同じ高さ", () => expect(noteSize("メモ", null).height).toBe(BLOCK_H));
+  it("改行すると縦に伸びる", () => expect(noteSize("一\n二\n三\n四", null).height).toBeGreaterThan(BLOCK_H));
+  it("幅はいちばん長い行で決まる", () =>
+    expect(noteSize("短い\nとても長い行がここにある", null).width).toBe(noteSize("とても長い行がここにある", null).width));
+  it("文字を大きくすると広がる", () => expect(noteSize("見出し", 28).width).toBeGreaterThan(noteSize("見出し", 14).width));
 });

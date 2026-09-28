@@ -7,6 +7,8 @@ import { createPeriodAction, deletePeriodAction, updatePeriodAction } from "@/ap
 import { neighbourPeriod, periodRangeLabel } from "@/lib/whiteboard";
 import type { PeriodSummary } from "@/lib/services/periods";
 import { cn, isComposing } from "@/lib/utils";
+import { isActivePane } from "@/components/board/active-pane";
+import type { PaneInfo } from "@/components/board/whiteboard";
 
 /**
  * 画面のいちばん上にある「いまの期間は何に向かっているのか」。
@@ -18,22 +20,24 @@ function Arrow({
   dir,
   target,
   onGo,
+  small,
 }: {
   dir: -1 | 1;
   target: PeriodSummary | null;
   onGo: (id: string) => void;
+  small?: boolean;
 }) {
   return (
     <button
       type="button"
-      className="arrow-btn grid size-12 shrink-0 place-items-center"
+      className={cn("arrow-btn grid shrink-0 place-items-center", small ? "size-8" : "size-12")}
       disabled={!target}
       onClick={() => target && onGo(target.id)}
       title={target ? target.title : dir < 0 ? "これがいちばん最初の期間" : "これがいちばん最後の期間"}
       aria-label={dir < 0 ? "前の期間へ" : "次の期間へ"}
       data-testid={dir < 0 ? "period-prev" : "period-next"}
     >
-      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round">
+      <svg width={small ? 22 : 34} height={small ? 22 : 34} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round">
         <path d={dir < 0 ? "M15 5l-7 7 7 7" : "M9 5l7 7-7 7"} />
       </svg>
     </button>
@@ -54,14 +58,25 @@ function Field({
   );
 }
 
-export function PeriodPill({ period, siblings }: { period: PeriodSummary; siblings: PeriodSummary[] }) {
+export function PeriodPill({
+  period,
+  siblings,
+  pane,
+}: {
+  period: PeriodSummary;
+  siblings: PeriodSummary[];
+  /** 分割画面の1枚として置かれているとき。移動はその枠だけを差し替える */
+  pane?: PaneInfo;
+}) {
   const router = useRouter();
   const [, start] = useTransition();
   const [open, setOpen] = useState(false);
   const prev = neighbourPeriod(siblings, period.id, -1);
   const next = neighbourPeriod(siblings, period.id, 1);
 
-  const go = (id: string) => router.push(`/?p=${id}`);
+  const go = (id: string) => (pane ? pane.onNavigate(id) : router.push(`/?p=${id}`));
+  // 並べているときは小さく。1枚だけのときは今までどおり大きく
+  const compact = Boolean(pane && pane.count > 1);
 
   // ← → キーでも期間を移動できる(文字入力中は除く)
   useEffect(() => {
@@ -69,24 +84,38 @@ export function PeriodPill({ period, siblings }: { period: PeriodSummary; siblin
       const el = document.activeElement;
       if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // 並べているときは、最後に触った枠だけが動く
+      if (pane && !isActivePane(pane.id)) return;
       if (e.key === "ArrowLeft" && prev) go(prev.id);
       if (e.key === "ArrowRight" && next) go(next.id);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prev?.id, next?.id]);
+  }, [prev?.id, next?.id, pane?.id, pane?.onNavigate]);
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-0 z-40 flex justify-center pt-7">
-      <div className="pointer-events-auto flex items-center gap-4">
-        <Arrow dir={-1} target={prev} onGo={go} />
+    <div
+      className={cn(
+        "pointer-events-none inset-x-0 top-0 z-40 flex justify-center",
+        pane ? "absolute" : "fixed",
+        // 左端の枠は、左上の名前・一覧・連絡先のボタンと重ならないよう一段下げる
+        compact ? (pane?.index === 0 ? "pt-[104px]" : "pt-4") : "pt-7",
+      )}
+    >
+      <div className={cn("pointer-events-auto flex items-center", compact ? "gap-1.5" : "gap-4")}>
+        <Arrow dir={-1} target={prev} onGo={go} small={compact} />
 
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
             <button
               type="button"
-              className="brick brick-press flex min-w-[520px] max-w-[820px] flex-col items-center rounded-full border-[4px] border-[var(--color-toy-purple)] bg-white px-14 py-4"
+              className={cn(
+                "brick brick-press flex flex-col items-center rounded-full border-[var(--color-toy-purple)] bg-white",
+                compact
+                  ? "min-w-[200px] max-w-[360px] border-[3px] px-7 py-2"
+                  : "min-w-[520px] max-w-[820px] border-[4px] px-14 py-4",
+              )}
               style={
                 {
                   "--depth-x": "0px",
@@ -97,10 +126,13 @@ export function PeriodPill({ period, siblings }: { period: PeriodSummary; siblin
               title="押すと期間を編集"
               data-testid="period-pill"
             >
-              <span className="text-[30px] font-bold leading-tight tracking-tight" data-testid="period-title">
+              <span
+                className={cn("max-w-full truncate font-bold leading-tight tracking-tight", compact ? "text-[17px]" : "text-[30px]")}
+                data-testid="period-title"
+              >
                 {period.title}
               </span>
-              <span className="num text-[13px] font-bold text-foreground/85" data-testid="period-range">
+              <span className={cn("num font-bold text-foreground/85", compact ? "text-[11px]" : "text-[13px]")} data-testid="period-range">
                 {periodRangeLabel(period.start_date, period.end_date)}
               </span>
             </button>
@@ -216,7 +248,22 @@ export function PeriodPill({ period, siblings }: { period: PeriodSummary; siblin
           </PopoverContent>
         </Popover>
 
-        <Arrow dir={1} target={next} onGo={go} />
+        <Arrow dir={1} target={next} onGo={go} small={compact} />
+
+        {pane?.onClose && (
+          <button
+            type="button"
+            className="ml-1 grid size-8 place-items-center rounded-full bg-white/80 text-muted-foreground shadow-sm hover:text-destructive"
+            onClick={pane.onClose}
+            title="この画面を閉じる"
+            aria-label="この画面を閉じる"
+            data-testid="pane-close"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        )}
       </div>
     </div>
   );

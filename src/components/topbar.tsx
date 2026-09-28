@@ -35,7 +35,7 @@ export async function Topbar() {
         {current?.name ?? "メンバー"}
       </span>
       <span className="text-[11px] font-bold text-muted-foreground">
-        {members.filter((m) => m.is_active).length}人
+        {members.filter((m) => m.is_active && m.id !== "mem_both").length}人
       </span>
     </header>
   );

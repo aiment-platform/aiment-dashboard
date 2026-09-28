@@ -8,7 +8,7 @@
  */
 import { getDb, getSql, schema } from "@/lib/db";
 import { newId } from "@/lib/ids";
-import { ACCOUNTS } from "@/lib/accounts";
+import { ACCOUNTS, ASSIGNEES } from "@/lib/accounts";
 
 /*
  * 安全弁: このスクリプトは全部消してから入れ直す。
@@ -58,7 +58,7 @@ async function main() {
   // ---- メンバー = 決まった3アカウント(src/lib/accounts.ts が正) ----------------
   const [soya, futo, other] = ACCOUNTS.map((a) => a.id);
   await db.insert(schema.members).values(
-    ACCOUNTS.map((a) => ({
+    ASSIGNEES.map((a) => ({
       id: a.id,
       name: a.name,
       role: null,

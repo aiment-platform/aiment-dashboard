@@ -82,3 +82,11 @@ export type ContactStatus = (typeof CONTACT_STATUS)[number];
  */
 export const CONTACT_CHANNEL = ["x", "instagram", "tiktok", "youtube", "discord", "messenger", "line", "email", "url", "other"] as const;
 export type ContactChannel = (typeof CONTACT_CHANNEL)[number];
+
+/** 盤の上の積み木ではないもの */
+export const BOARD_ITEM_TYPE = ["line", "pen", "section"] as const;
+export type BoardItemType = (typeof BOARD_ITEM_TYPE)[number];
+
+/** 積み木の種類。note はタスクではないメモ */
+export const BLOCK_KIND = ["task", "note"] as const;
+export type BlockKind = (typeof BLOCK_KIND)[number];

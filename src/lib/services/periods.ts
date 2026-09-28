@@ -1,4 +1,6 @@
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
+import { listItems, type BlockLink, type BoardItem } from "./board-items";
 import { getDb, schema } from "@/lib/db";
 import { newId, nowIso } from "@/lib/ids";
 import { logActivity, type Actor } from "./activity";
@@ -55,6 +57,10 @@ export interface PeriodBlock {
   created_at: string;
   /** 最後に書きかえた時刻。動かした記録を捨ててよいかの判断に使う */
   updated_at: string;
+  /** task = ふつうの積み木 / note = タスクではないメモ */
+  kind: "task" | "note";
+  /** メモの文字の大きさ(px)。null = ふつう */
+  font_size: number | null;
 }
 
 export interface PeriodSummary {
@@ -72,6 +78,12 @@ export interface PeriodBoard {
   /** ← → で行き来する並び。UI はこの配列の前後を使う。 */
   siblings: PeriodSummary[];
   blocks: PeriodBlock[];
+  /** 直線・ペン・セクション */
+  items: BoardItem[];
+  /** この盤の積み木に触れている依存の矢印(別の期間へ出ていくものも含む) */
+  links: BlockLink[];
+  /** 矢印の相手が別の期間にいるとき、その積み木の名前と期間(盤の端に「→ ○○」と出すため) */
+  outside: Record<string, { title: string; period_id: string; period_title: string; done: boolean }>;
 }
 
 function today(): string {
@@ -124,7 +136,7 @@ export async function listPeriods(): Promise<PeriodSummary[]> {
   ]);
   const counts = new Map<string, number>();
   for (const m of msRows) {
-    if (m.status === "dropped") continue;
+    if (m.status === "dropped" || m.kind === "note") continue;
     const objId = wsIdx.get(m.workstreamId)?.objectiveId;
     if (objId) counts.set(objId, (counts.get(objId) ?? 0) + 1);
   }
@@ -167,7 +179,15 @@ export async function getPeriodBoard(periodId: string): Promise<PeriodBoard | nu
   // 全部「この期間の」で絞れる(積み木 → ワークストリーム → 期間 をつないで聞く)ので、
   // 前の答えを待つ必要が無い。**1往復ぶん**で全部そろう(以前は4往復)。
   const inPeriod = eq(schema.workstreams.objectiveId, periodId);
-  const [objRows, wsRows, msJoined, taskJoined, activeBlockers, workerJoined, members, siblings] = await Promise.all([
+  // 矢印は「両端の積み木 → ワークストリーム → 期間」までつないで1回で聞く。
+  // 片方が別の期間にいても、その積み木の名前・期間名・できたかが同じ行で手に入る(追加の往復が要らない)
+  const mf = alias(schema.milestones, "mf");
+  const mt = alias(schema.milestones, "mt");
+  const wf = alias(schema.workstreams, "wf");
+  const wt = alias(schema.workstreams, "wt");
+  const of = alias(schema.objectives, "of");
+  const ot = alias(schema.objectives, "ot");
+  const [objRows, wsRows, msJoined, taskJoined, activeBlockers, workerJoined, members, siblings, items, linkRows] = await Promise.all([
     db.select().from(schema.objectives).where(eq(schema.objectives.id, periodId)),
     db.select().from(schema.workstreams).where(inPeriod),
     db
@@ -192,6 +212,17 @@ export async function getPeriodBoard(periodId: string): Promise<PeriodBoard | nu
       .orderBy(schema.blockWorkers.startedAt),
     memberMap(),
     listPeriods(),
+    listItems(periodId),
+    db
+      .select({ link: schema.blockLinks, from: mf, to: mt, fromPeriod: of, toPeriod: ot })
+      .from(schema.blockLinks)
+      .innerJoin(mf, eq(schema.blockLinks.fromId, mf.id))
+      .innerJoin(wf, eq(mf.workstreamId, wf.id))
+      .innerJoin(of, eq(wf.objectiveId, of.id))
+      .innerJoin(mt, eq(schema.blockLinks.toId, mt.id))
+      .innerJoin(wt, eq(mt.workstreamId, wt.id))
+      .innerJoin(ot, eq(wt.objectiveId, ot.id))
+      .where(or(eq(wf.objectiveId, periodId), eq(wt.objectiveId, periodId))),
   ]);
 
   const o = objRows[0];
@@ -234,7 +265,8 @@ export async function getPeriodBoard(periodId: string): Promise<PeriodBoard | nu
     const due = m.dueDate?.slice(0, 10) ?? null;
     const daysLeft = due ? Math.round((Date.parse(`${due}T00:00:00Z`) - Date.parse(`${t}T00:00:00Z`)) / 86_400_000) : null;
     const blocked = (tasksOf.get(m.id) ?? []).some((x) => blockedTaskIds.has(x.id));
-    const ownerId = m.ownerId ?? wsOwner.get(m.workstreamId) ?? null;
+    // メモは担当を持たない(DBに残っていても見せない。タスクに戻すとまた見える)
+    const ownerId = m.kind === "note" ? null : (m.ownerId ?? wsOwner.get(m.workstreamId) ?? null);
     return {
       id: m.id,
       title: m.title,
@@ -245,7 +277,9 @@ export async function getPeriodBoard(periodId: string): Promise<PeriodBoard | nu
       status: m.status,
       due_date: due,
       important: m.important === 1,
-      urgent: isUrgentBlock({ status: m.status, important: m.important === 1, blocked, daysLeft }),
+      kind: m.kind === "note" ? "note" : "task",
+      font_size: m.fontSize ?? null,
+      urgent: m.kind === "note" ? false : isUrgentBlock({ status: m.status, important: m.important === 1, blocked, daysLeft }),
       owner: ownerId ? { id: ownerId, name: members.get(ownerId)?.name ?? ownerId } : null,
       workers: (workersOf.get(m.id) ?? []).map((w) => ({
         id: w.memberId,
@@ -258,10 +292,30 @@ export async function getPeriodBoard(periodId: string): Promise<PeriodBoard | nu
     };
   });
 
+  // 矢印。別の期間にいる端は、名前と期間だけ覚えておく(盤の端に札を出すため)
+  const here = new Set(blocks.map((b) => b.id));
+  const links: BlockLink[] = [];
+  const outside: PeriodBoard["outside"] = {};
+  for (const r of linkRows) {
+    links.push({ id: r.link.id, from_id: r.link.fromId, to_id: r.link.toId });
+    for (const [m, other] of [
+      [r.from, r.fromPeriod],
+      [r.to, r.toPeriod],
+    ] as const) {
+      if (other.id === periodId || m.status === "dropped") continue;
+      outside[m.id] = { title: m.title, period_id: other.id, period_title: other.title, done: m.status === "achieved" };
+    }
+  }
+  // 片づけた積み木へ向かう矢印は描かない
+  const alive = links.filter((l) => (here.has(l.from_id) || outside[l.from_id]) && (here.has(l.to_id) || outside[l.to_id]));
+
   return {
-    period: summarise(o, blocks.length, t),
+    period: summarise(o, blocks.filter((b) => b.kind === "task").length, t),
     siblings,
     blocks,
+    items,
+    links: alive,
+    outside,
   };
 }
 
@@ -378,7 +432,7 @@ export async function listWork(): Promise<WorkItem[]> {
     return o && o.status !== "archived" ? { id: o.id, title: o.title } : null;
   };
 
-  const msRows = msAll.filter((m) => m.status !== "dropped");
+  const msRows = msAll.filter((m) => m.status !== "dropped" && m.kind !== "note");
   const msById = new Map(msRows.map((m) => [m.id, m]));
   const blockedTaskIds = new Set(activeBlockers.map((b) => b.taskId).filter(Boolean) as string[]);
   const allTasks = taskAll.filter((x) => x.status !== "dropped");

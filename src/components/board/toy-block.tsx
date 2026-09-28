@@ -11,6 +11,8 @@ import {
 } from "@/app/actions";
 import { useHistory } from "@/components/board/history";
 import {
+  NOTE_FONT_DEFAULT,
+  noteSize,
   BLOCK_H,
   HANDLE_W,
   MIN_FACE_W,
@@ -328,6 +330,64 @@ export function ToyBlock({
   const rows = block.subtasks.length + (adding ? 1 : 0);
   const trunkH = rows > 0 ? (rows - 1) * SUBTASK_H + SUBTASK_H / 2 : 0;
 
+  /*
+   * タスクではないメモ。点線で縁取った半透明のブロック。
+   * 担当・期限・できた・サブタスクは持たない(持ち手の開閉も無い)。
+   * 動かし方・くっつき方・選び方は積み木と同じ。
+   */
+  if (block.kind === "note") {
+    const px = block.font_size ?? NOTE_FONT_DEFAULT;
+    const { height } = noteSize(block.title, block.font_size);
+    const text = { fontSize: px, lineHeight: 1.4 };
+    return (
+      <div
+        className={cn("absolute select-none", dragging && "brick-raised", lifted && "brick-lifted")}
+        style={{ left: x, top: y, zIndex: Math.max(6, (dragging ? 200 : 40) - depth * 2) }}
+        data-block={block.id}
+        data-kind="note"
+      >
+        <div
+          className="block-grab flex items-center rounded-[13px] border-[2.5px] border-dashed border-[rgba(20,22,28,0.35)] bg-[rgba(255,255,255,0.45)] px-3 backdrop-blur-[1px]"
+          data-dragging={dragging}
+          style={{ height, width }}
+          onPointerDown={(e) => {
+            downAt.current = { x: e.clientX, y: e.clientY };
+            onPointerDown(e);
+          }}
+          onClick={(e) => wasClick(e) && onSelect(e.shiftKey)}
+          data-testid="note-block"
+        >
+          {editingTitle ? (
+            <NoteTextarea
+              value={block.title}
+              fontSize={px}
+              onDone={(v) => {
+                const before = block.title;
+                setEditingTitle(false);
+                if (!v || v === before) return;
+                const rename = (title: string) => start(() => updateBlockAction(block.id, { title }));
+                rename(v);
+                record({ label: "メモを書きかえた", undo: () => rename(before), redo: () => rename(v) });
+              }}
+              onCancel={() => setEditingTitle(false)}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => wasClick(e) && setEditingTitle(true)}
+              className="whitespace-pre-wrap break-words text-left font-bold text-[rgba(20,22,28,0.62)]"
+              style={text}
+              title="クリックで書きかえ(Shift+Enter で改行)"
+              data-testid="note-text"
+            >
+              {block.title}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn("absolute select-none", dragging && "brick-raised", lifted && "brick-lifted")}
@@ -538,5 +598,51 @@ export function ToyBlock({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * メモを書く欄。Enter で確定、**Shift+Enter で改行**(Slack や Figma のコメントと同じ)。
+ * 行が増えると欄も縦に伸びる。変換中の Enter は確定に使わない。
+ */
+export function NoteTextarea({
+  value,
+  fontSize,
+  placeholder,
+  onDone,
+  onCancel,
+}: {
+  value: string;
+  fontSize: number;
+  placeholder?: string;
+  onDone: (v: string) => void;
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState(value);
+  const lines = (text || placeholder || "").split("\n");
+  const longest = Math.max(4, ...lines.map((l) => [...l].reduce((n, ch) => n + (/[\x20-\x7e]/.test(ch) ? 1 : 2), 0)));
+  return (
+    <textarea
+      autoFocus
+      value={text}
+      rows={text.split("\n").length}
+      placeholder={placeholder}
+      onChange={(e) => setText(e.target.value)}
+      // 書きかえるときは、カーソルを最後に置く(続きを書き足しやすいように)
+      onFocus={(e) => e.currentTarget.setSelectionRange(text.length, text.length)}
+      style={{ fontSize, lineHeight: 1.4, width: Math.min(860, longest * fontSize * 0.56 + 28) }}
+      className="inset-field block resize-none overflow-hidden rounded-[8px] px-2 py-1 font-bold text-foreground"
+      onPointerDown={(e) => e.stopPropagation()}
+      onBlur={() => onDone(text.trim())}
+      onKeyDown={(e) => {
+        if (isComposing(e)) return;
+        if (e.key === "Escape") onCancel();
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
+      }}
+      data-testid="note-input"
+    />
   );
 }

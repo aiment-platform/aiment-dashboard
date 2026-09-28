@@ -26,7 +26,10 @@ export function RealtimeCursors({ scale }: { scale: number }) {
 export function RealtimeBridge({
   pending,
   onReady,
+  showPresence = true,
 }: {
+  /** 分割画面では左上の「いま居る人」は1枚目だけに出す(重なるので) */
+  showPresence?: boolean;
   /** 書き込み中かどうか。false に戻った瞬間に1回だけ知らせる */
   pending: boolean;
   /** カーソルを流す関数を盤へ渡す(盤はポインタが動くたびに呼ぶ) */
@@ -39,5 +42,5 @@ export function RealtimeBridge({
     onReady((p) => (p ? move(p) : leave()));
   }, [onReady, move, leave]);
 
-  return <PresenceChips />;
+  return showPresence ? <PresenceChips /> : null;
 }

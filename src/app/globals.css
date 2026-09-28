@@ -311,3 +311,10 @@ body {
   border-color: var(--color-toy-purple);
   outline: none;
 }
+
+/* 依存の矢印を引いている最中、離したらつながる積み木を光らせる */
+[data-link-target] {
+  outline: 3px solid var(--color-toy-purple);
+  outline-offset: 3px;
+  border-radius: 14px;
+}

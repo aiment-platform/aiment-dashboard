@@ -36,6 +36,20 @@
       "when": 1790592614622,
       "tag": "0004_drop_old_contact_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790600465946,
+      "tag": "0005_board_tools",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790632640093,
+      "tag": "0006_note_font_size",
+      "breakpoints": true
     }
   ]
 }

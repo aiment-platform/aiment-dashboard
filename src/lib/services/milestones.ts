@@ -36,6 +36,8 @@ export async function createMilestone(
     owner_id?: string | null;
     /** ホワイトボード上で作成された場合の初期座標 */
     board_x?: number | null;
+    /** task = ふつうの積み木 / note = タスクではないメモ */
+    kind?: "task" | "note";
     board_y?: number | null;
   },
   actor: Actor,
@@ -64,6 +66,7 @@ export async function createMilestone(
       dueDate: input.due_date ?? null,
       sortOrder: input.sort_order ?? 0,
       boardX: input.board_x ?? null,
+      kind: input.kind ?? "task",
       boardY: input.board_y ?? null,
       createdAt: now,
       updatedAt: now,
@@ -149,6 +152,8 @@ export async function updateMilestone(
     sort_order: number;
     owner_id: string | null;
     important: boolean;
+    /** メモの文字の大きさ(px)。null でふつうに戻す */
+    font_size: number | null;
   }>,
   actor: Actor,
 ): Promise<void> {
@@ -172,6 +177,7 @@ export async function updateMilestone(
       ...(patch.sort_order !== undefined && { sortOrder: patch.sort_order }),
       ...(patch.owner_id !== undefined && { ownerId: patch.owner_id }),
       ...(patch.important !== undefined && { important: patch.important ? 1 : 0 }),
+      ...(patch.font_size !== undefined && { fontSize: patch.font_size }),
       updatedAt: nowIso(),
     })
     .where(eq(schema.milestones.id, id));

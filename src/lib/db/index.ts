@@ -90,7 +90,7 @@ export function getDb(): Db {
  */
 export async function ensureBaseRows(): Promise<void> {
   const { nowIso } = await import("@/lib/ids");
-  const { ACCOUNTS } = await import("@/lib/accounts");
+  const { ASSIGNEES } = await import("@/lib/accounts");
   const { inArray } = await import("drizzle-orm");
   const db = getDb();
 
@@ -101,11 +101,11 @@ export async function ensureBaseRows(): Promise<void> {
       .values({ id: "workspace", name: "aiment", createdAt: nowIso() });
   }
 
-  const ids = ACCOUNTS.map((a) => a.id);
+  const ids = ASSIGNEES.map((a) => a.id);
   const have = new Set(
     (await db.select().from(schema.members).where(inArray(schema.members.id, ids))).map((m) => m.id),
   );
-  const missing = ACCOUNTS.filter((a) => !have.has(a.id));
+  const missing = ASSIGNEES.filter((a) => !have.has(a.id));
   if (missing.length > 0) {
     await db.insert(schema.members).values(
       missing.map((a) => ({

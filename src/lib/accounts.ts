@@ -24,6 +24,22 @@ export const ACCOUNTS: Account[] = [
 
 export const ACCOUNT_IDS = ACCOUNTS.map((a) => a.id);
 
+/**
+ * 担当者としてだけ選べる人。「だれとして書く？」には出さない。
+ * Both = Soya と Futo の二人で持つ仕事。
+ */
+export const ASSIGNEE_ONLY: Account[] = [{ id: "mem_both", name: "Both", color: "#3b82f6" }];
+
+/** 担当者として選べる全員(書き手の3人 + Both) */
+export const ASSIGNEES: Account[] = [...ACCOUNTS, ...ASSIGNEE_ONLY];
+
+/** その担当者は、この人の仕事として数えるか(Both は Soya にも Futo にも入る) */
+export function isAssignedTo(ownerId: string | null | undefined, memberId: string): boolean {
+  if (!ownerId) return false;
+  if (ownerId === memberId) return true;
+  return ownerId === "mem_both" && (memberId === "mem_soya" || memberId === "mem_futo");
+}
+
 export function isAccountId(id: string | null | undefined): boolean {
   return !!id && ACCOUNT_IDS.includes(id);
 }
