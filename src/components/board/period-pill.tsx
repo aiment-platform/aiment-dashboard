@@ -139,7 +139,7 @@ export function PeriodPill({
           </PopoverTrigger>
 
           <PopoverContent
-            className="w-[320px] rounded-[18px] border-2 border-[rgba(20,22,28,0.14)] p-4"
+            className="w-[320px] rounded-[18px] border-2 border-[rgba(var(--ink),0.14)] p-4"
             sideOffset={12}
           >
             <form
@@ -168,7 +168,7 @@ export function PeriodPill({
               </div>
               <button
                 type="submit"
-                className="brick brick-press w-full rounded-[10px] bg-[var(--color-toy-purple)] py-2 text-[13px] font-bold text-white"
+                className="brick brick-press w-full rounded-[10px] bg-[var(--color-toy-purple)] py-2 text-[13px] font-bold text-on-accent"
                 style={{ "--depth-color": "#4a2fc4" } as React.CSSProperties}
               >
                 保存
@@ -196,7 +196,7 @@ export function PeriodPill({
                 >
                   <span className="flex-1 truncate text-[12.5px] font-bold">{p.title}</span>
                   {p.is_now && (
-                    <span className="shrink-0 rounded-full bg-[var(--color-toy-purple)] px-1.5 text-[9px] font-bold text-white">
+                    <span className="shrink-0 rounded-full bg-[var(--color-toy-purple)] px-1.5 text-[9px] font-bold text-on-accent">
                       いま
                     </span>
                   )}
@@ -211,7 +211,7 @@ export function PeriodPill({
               <button
                 type="button"
                 className="brick brick-press flex-1 rounded-[10px] bg-secondary py-1.5 text-[12px] font-bold"
-                style={{ "--depth-color": "rgba(20,22,28,0.16)" } as React.CSSProperties}
+                style={{ "--depth-color": "rgba(var(--shade),0.16)" } as React.CSSProperties}
                 onClick={() =>
                   start(async () => {
                     const id = await createPeriodAction({

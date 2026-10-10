@@ -15,6 +15,11 @@ import { cn, isComposing } from "@/lib/utils";
  */
 
 export const INK = "#14161c";
+/**
+ * 線の色を画面に出すときの色。ふつうの黒(INK)は、ダークモードでは紙に溶けて見えなくなるので
+ * 「いまの文字色」に置きかえる(ライトでは黒、ダークでは生成り色)。
+ */
+export const inkOf = (color: string | null | undefined) => (!color || color === INK ? "var(--foreground)" : color);
 export const ITEM_COLORS = [
   "#14161c",
   "#6c4bf4",
@@ -154,7 +159,7 @@ export function SectionsLayer({
                   className={cn(
                     "cursor-move whitespace-nowrap rounded-[8px] px-2 py-0.5 text-[12px] font-bold",
                     on
-                      ? "bg-[var(--color-toy-purple)] text-white"
+                      ? "bg-[var(--color-toy-purple)] text-on-accent"
                       : "bg-[rgba(108,75,244,0.14)] text-[var(--color-toy-purple)]",
                   )}
                   onPointerDown={(e) => onPointerDown(s, e, "move")}
@@ -265,7 +270,7 @@ export function StrokesLayer({
               <path
                 d={d}
                 fill="none"
-                stroke={it.color ?? INK}
+                stroke={inkOf(it.color)}
                 strokeWidth={3}
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -328,7 +333,7 @@ export function DraftShape({
       <path
         d={pathOf(draft.points)}
         fill="none"
-        stroke={INK}
+        stroke="var(--foreground)"
         strokeWidth={3}
         strokeLinecap="round"
         strokeLinejoin="round"

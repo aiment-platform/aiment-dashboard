@@ -37,10 +37,10 @@ export function AddContact({ fixedKind }: { fixedKind: ContactKind | null }) {
   return (
     <div
       className="brick flex items-center gap-2 rounded-[12px] bg-white p-2"
-      style={{ "--depth-x": "0px", "--depth-y": "4px", "--depth-color": "rgba(20,22,28,0.16)" } as React.CSSProperties}
+      style={{ "--depth-x": "0px", "--depth-y": "4px", "--depth-color": "rgba(var(--shade),0.16)" } as React.CSSProperties}
     >
       {fixedKind ? (
-        <span className="rounded-[8px] px-2 py-1 text-[11px] font-bold text-white" style={{ background: KIND_COLOR[fixedKind] }}>
+        <span className="rounded-[8px] px-2 py-1 text-[11px] font-bold text-on-accent" style={{ background: KIND_COLOR[fixedKind] }}>
           {KIND_LABEL[fixedKind]}
         </span>
       ) : (
@@ -52,7 +52,7 @@ export function AddContact({ fixedKind }: { fixedKind: ContactKind | null }) {
             onClick={() => setKind(k)}
             className={cn(
               "rounded-[8px] border-2 px-2 py-1 text-[11px] font-bold",
-              kind === k ? "border-transparent text-white" : "border-[rgba(20,22,28,0.12)] bg-white text-muted-foreground",
+              kind === k ? "border-transparent text-on-accent" : "border-[rgba(var(--ink),0.12)] bg-white text-muted-foreground",
             )}
             style={kind === k ? { background: KIND_COLOR[k] } : undefined}
             data-testid={`add-kind-${k}`}
@@ -65,7 +65,7 @@ export function AddContact({ fixedKind }: { fixedKind: ContactKind | null }) {
       <input
         ref={input}
         placeholder="名前を入れて Enter"
-        className="min-w-0 flex-1 rounded-[8px] border-2 border-[rgba(20,22,28,0.12)] px-2.5 py-1.5 text-[13px] font-bold outline-none focus:border-[var(--color-toy-purple)]"
+        className="min-w-0 flex-1 rounded-[8px] border-2 border-[rgba(var(--ink),0.12)] px-2.5 py-1.5 text-[13px] font-bold outline-none focus:border-[var(--color-toy-purple)]"
         onKeyDown={(e) => {
           if (e.key === "Enter" && !isComposing(e)) submit();
         }}
@@ -75,7 +75,7 @@ export function AddContact({ fixedKind }: { fixedKind: ContactKind | null }) {
         type="button"
         onClick={submit}
         disabled={pending}
-        className="brick brick-press rounded-[9px] bg-[var(--color-toy-purple)] px-3 py-1.5 text-[12px] font-bold text-white disabled:opacity-50"
+        className="brick brick-press rounded-[9px] bg-[var(--color-toy-purple)] px-3 py-1.5 text-[12px] font-bold text-on-accent disabled:opacity-50"
         style={{ "--depth-x": "0px", "--depth-y": "3px", "--depth-color": "#4a2fc4" } as React.CSSProperties}
         data-testid="add-contact-submit"
       >

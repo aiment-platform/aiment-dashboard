@@ -122,7 +122,7 @@ export function HistoryDock() {
   const style = {
     "--depth-x": "0px",
     "--depth-y": "3px",
-    "--depth-color": "rgba(20,22,28,0.18)",
+    "--depth-color": "rgba(var(--shade),0.18)",
   } as React.CSSProperties;
   const cls =
     "brick brick-press grid size-8 place-items-center rounded-[9px] bg-white disabled:opacity-35 disabled:shadow-none";

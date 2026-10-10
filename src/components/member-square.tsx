@@ -16,7 +16,7 @@ export function MemberSquare({
   const color = memberColor(id);
   return (
     <span
-      className="brick grid shrink-0 place-items-center rounded-[6px] font-bold text-white"
+      className="brick grid shrink-0 place-items-center rounded-[6px] font-bold text-on-accent"
       style={
         {
           width: size,

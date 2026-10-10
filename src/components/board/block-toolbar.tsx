@@ -82,8 +82,8 @@ export function BlockToolbar({
 
   return (
     <div
-      className="brick flex w-max items-center gap-0.5 whitespace-nowrap rounded-[13px] border-2 border-[rgba(20,22,28,0.12)] bg-white p-1"
-      style={{ "--depth-x": "0px", "--depth-y": "4px", "--depth-color": "rgba(20,22,28,0.18)" } as React.CSSProperties}
+      className="brick flex w-max items-center gap-0.5 whitespace-nowrap rounded-[13px] border-2 border-[rgba(var(--ink),0.12)] bg-white p-1"
+      style={{ "--depth-x": "0px", "--depth-y": "4px", "--depth-color": "rgba(var(--shade),0.18)" } as React.CSSProperties}
       onPointerDown={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
       data-testid="block-toolbar"
@@ -105,7 +105,7 @@ export function BlockToolbar({
           </button>
         </PopoverTrigger>
         <PopoverContent
-          className="w-56 rounded-[14px] border-2 border-[rgba(20,22,28,0.14)] p-2.5"
+          className="w-56 rounded-[14px] border-2 border-[rgba(var(--ink),0.14)] p-2.5"
           sideOffset={8}
           onPointerDown={(e) => e.stopPropagation()}
         >
@@ -129,9 +129,9 @@ export function BlockToolbar({
                 }}
                 className={cn(
                   "brick brick-press rounded-[8px] bg-secondary px-2 py-1 text-[11px] font-bold",
-                  block.due_date === q.value && "bg-[var(--color-toy-purple)] text-white",
+                  block.due_date === q.value && "bg-[var(--color-toy-purple)] text-on-accent",
                 )}
-                style={{ "--depth-x": "0px", "--depth-y": "2px", "--depth-color": "rgba(20,22,28,0.16)" } as React.CSSProperties}
+                style={{ "--depth-x": "0px", "--depth-y": "2px", "--depth-color": "rgba(var(--shade),0.16)" } as React.CSSProperties}
               >
                 {q.label}
               </button>
@@ -342,8 +342,8 @@ export function MultiToolbar({
 
   return (
     <div
-      className="brick flex w-max items-center gap-0.5 whitespace-nowrap rounded-[13px] border-2 border-[rgba(20,22,28,0.12)] bg-white p-1"
-      style={{ "--depth-x": "0px", "--depth-y": "4px", "--depth-color": "rgba(20,22,28,0.18)" } as React.CSSProperties}
+      className="brick flex w-max items-center gap-0.5 whitespace-nowrap rounded-[13px] border-2 border-[rgba(var(--ink),0.12)] bg-white p-1"
+      style={{ "--depth-x": "0px", "--depth-y": "4px", "--depth-color": "rgba(var(--shade),0.18)" } as React.CSSProperties}
       onPointerDown={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
       data-testid="multi-toolbar"
@@ -482,8 +482,8 @@ export function NoteToolbar({
   const setKind = (kind: "task" | "note") => start(() => setBlockKindAction(block.id, kind));
   return (
     <div
-      className="brick flex w-max items-center gap-0.5 whitespace-nowrap rounded-[13px] border-2 border-[rgba(20,22,28,0.12)] bg-white p-1"
-      style={{ "--depth-x": "0px", "--depth-y": "4px", "--depth-color": "rgba(20,22,28,0.18)" } as React.CSSProperties}
+      className="brick flex w-max items-center gap-0.5 whitespace-nowrap rounded-[13px] border-2 border-[rgba(var(--ink),0.12)] bg-white p-1"
+      style={{ "--depth-x": "0px", "--depth-y": "4px", "--depth-color": "rgba(var(--shade),0.18)" } as React.CSSProperties}
       onPointerDown={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
       data-testid="note-toolbar"
@@ -509,7 +509,7 @@ export function NoteToolbar({
             className={cn(
               BTN,
               "w-auto min-w-[30px] px-1.5 font-bold",
-              on && "bg-[var(--color-toy-purple)] text-white hover:bg-[var(--color-toy-purple)] hover:text-white",
+              on && "bg-[var(--color-toy-purple)] text-on-accent hover:bg-[var(--color-toy-purple)] hover:text-on-accent",
             )}
             style={{ fontSize: 9 + NOTE_FONT_SIZES.indexOf(f) * 2 }}
             aria-pressed={on}

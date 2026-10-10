@@ -41,18 +41,18 @@ export default async function WhoPage({
               <input type="hidden" name="next" value={next ?? "/"} />
               <button
                 type="submit"
-                className="brick brick-press flex w-[160px] flex-col items-center gap-3 rounded-[20px] border-2 border-[rgba(20,22,28,0.12)] bg-white px-4 py-6"
+                className="brick brick-press flex w-[160px] flex-col items-center gap-3 rounded-[20px] border-2 border-[rgba(var(--ink),0.12)] bg-white px-4 py-6"
                 style={
                   {
                     "--depth-x": "0px",
                     "--depth-y": "6px",
-                    "--depth-color": "rgba(20,22,28,0.2)",
+                    "--depth-color": "rgba(var(--shade),0.2)",
                   } as React.CSSProperties
                 }
                 data-testid={`account-${a.id}`}
               >
                 <span
-                  className="brick grid size-[52px] place-items-center rounded-[14px] text-[20px] font-bold text-white"
+                  className="brick grid size-[52px] place-items-center rounded-[14px] text-[20px] font-bold text-on-accent"
                   style={
                     {
                       background: a.color,

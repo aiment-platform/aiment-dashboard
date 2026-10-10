@@ -21,11 +21,11 @@ export const STATUS_LABEL: Record<ContactStatus, string> = {
  *   薄紫 = ふつう / 若草 = うまくいっている / 桃 = こちらが動くべき
  */
 export const STATUS_TONE: Record<ContactStatus, { face: string; deep: string; ink: string }> = {
-  candidate: { face: "#ffffff", deep: "rgba(20,22,28,0.18)", ink: "#14161c" },
+  candidate: { face: "var(--color-white)", deep: "rgba(var(--shade),0.18)", ink: "var(--foreground)" },
   contacted: { face: "var(--color-brick-face)", deep: "var(--color-brick-deep)", ink: "var(--color-brick-ink)" },
   waiting: { face: "var(--color-brick-face)", deep: "var(--color-brick-deep)", ink: "var(--color-brick-ink)" },
   active: { face: "var(--color-brick-done-face)", deep: "var(--color-brick-done-deep)", ink: "var(--color-brick-done-ink)" },
-  passed: { face: "#f1f0ec", deep: "rgba(20,22,28,0.14)", ink: "rgba(20,22,28,0.5)" },
+  passed: { face: "var(--muted)", deep: "rgba(var(--shade),0.14)", ink: "rgba(var(--ink),0.5)" },
 };
 
 export const KIND_COLOR: Record<ContactKind, string> = {

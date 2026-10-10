@@ -56,7 +56,7 @@ export function FirstPeriod() {
         <button
           type="submit"
           disabled={pending}
-          className="brick brick-press mx-auto mt-6 block rounded-[14px] bg-[var(--color-toy-purple)] px-8 py-2.5 text-[14px] font-bold text-white disabled:opacity-60"
+          className="brick brick-press mx-auto mt-6 block rounded-[14px] bg-[var(--color-toy-purple)] px-8 py-2.5 text-[14px] font-bold text-on-accent disabled:opacity-60"
           style={{ "--depth-color": "#4a2fc4" } as React.CSSProperties}
         >
           はじめる

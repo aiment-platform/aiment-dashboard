@@ -9,7 +9,7 @@ export default async function SettingsPage() {
   const [members, periods] = await Promise.all([listMembers(), listPeriods()]);
   const card =
     "brick rounded-[14px] bg-white p-4";
-  const depth = { "--depth-x": "0px", "--depth-y": "4px", "--depth-color": "rgba(20,22,28,0.16)" } as React.CSSProperties;
+  const depth = { "--depth-x": "0px", "--depth-y": "4px", "--depth-color": "rgba(var(--shade),0.16)" } as React.CSSProperties;
 
   return (
     <div className="max-w-[720px] space-y-8">
@@ -52,7 +52,7 @@ export default async function SettingsPage() {
                 >
                   <span className="flex-1 truncate text-[13px] font-bold">{p.title}</span>
                   {p.is_now && (
-                    <span className="rounded-full bg-[var(--color-toy-purple)] px-1.5 text-[9px] font-bold text-white">
+                    <span className="rounded-full bg-[var(--color-toy-purple)] px-1.5 text-[9px] font-bold text-on-accent">
                       いま
                     </span>
                   )}

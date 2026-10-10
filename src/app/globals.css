@@ -28,10 +28,19 @@
   --accent-foreground: #14161c;
   --destructive: #d83a5e;
   --destructive-foreground: #ffffff;
-  --border: rgba(20, 22, 28, 0.14);
-  --input: rgba(20, 22, 28, 0.22);
+  --border: rgba(var(--ink), 0.14);
+  --input: rgba(var(--ink), 0.22);
   --ring: rgba(108, 75, 244, 0.5);
   --radius: 0.75rem;
+
+  /*
+   * 「黒っぽいインク」と「影」と「白い面」の元の色(R, G, B)。
+   * 画面のあちこちに rgba(var(--ink), 0.12) のように書いてあり、
+   * ダークモードではこの3つを差し替えるだけで、線・枠・影がまとめて夜用になる。
+   */
+  --ink: 20, 22, 28;
+  --shade: 20, 22, 28;
+  --surface: 255, 255, 255;
 }
 
 @theme inline {
@@ -88,6 +97,15 @@
   --color-toy-purple: #6c4bf4;
   --color-toy-purple-soft: #ece8ff;
 
+  /* 紫など色つきのボタンに乗る文字(ふつうは白) */
+  --color-on-accent: #ffffff;
+  /* 持ち手の ∨ の色 */
+  --color-grip-ink: #5b5b5b;
+  /* 「すべて」タブなど、いちばん強い無彩色の面 */
+  --color-strong: #14161c;
+  /* 揃えのガイド線 */
+  --color-guide: #ff3d8b;
+
   /*
    * 一覧・設定など「紙ではない」ページ用の意味づけトークン。
    * 積み木ボードは3色しか使わないが、表形式の画面には
@@ -95,8 +113,8 @@
    * 値はすべて積み木の3色から引いているので、行き来しても世界観は割れない。
    */
   --color-faint: #85889a; /* 3階調のいちばん薄い文字 */
-  --color-track: rgba(20, 22, 28, 0.1); /* ゲージの溝 */
-  --color-line-soft: rgba(20, 22, 28, 0.07);
+  --color-track: rgba(var(--ink), 0.1); /* ゲージの溝 */
+  --color-line-soft: rgba(var(--ink), 0.07);
 
   --color-calm: #6c4bf4; /* 落ち着いている = 積み木の紫 */
   --color-warm: #b5730a;
@@ -110,7 +128,7 @@
   --color-offtrack: #c62d55;
   --color-offtrack-bg: rgba(198, 45, 85, 0.1);
   --color-stale: #8b8e9c;
-  --color-stale-bg: rgba(20, 22, 28, 0.05);
+  --color-stale-bg: rgba(var(--ink), 0.05);
 
   --color-achieved: #2f7d1f; /* 若草の積み木のインク */
   --color-delta: #2f7d1f;
@@ -140,14 +158,14 @@ body {
  * 影は**真下にだけ**落とす(横にずらすと積み木が右に傾いて見える)。
  */
 .brick {
-  box-shadow: var(--depth-x, 0px) var(--depth-y, 5px) 0 0 var(--depth-color, rgba(20, 22, 28, 0.18));
+  box-shadow: var(--depth-x, 0px) var(--depth-y, 5px) 0 0 var(--depth-color, rgba(var(--shade), 0.18));
   transition:
     box-shadow 90ms ease,
     transform 90ms ease;
 }
 .brick-press:active {
   transform: translate(var(--depth-x, 0px), var(--depth-y, 5px));
-  box-shadow: 0 0 0 0 var(--depth-color, rgba(20, 22, 28, 0.18));
+  box-shadow: 0 0 0 0 var(--depth-color, rgba(var(--shade), 0.18));
 }
 /*
  * 掴んでいる積み木。厚み(側面)は伸ばさない — 伸ばすと積み木が
@@ -166,7 +184,7 @@ body {
    drop-shadow は厚みの影も含めた実際の形に落ちるので、
    持ち手と面がひとつの塊として浮いて見える。 */
 .brick-lifted {
-  filter: drop-shadow(0 13px 9px rgba(20, 22, 28, 0.28));
+  filter: drop-shadow(0 13px 9px rgba(var(--shade), 0.28));
 }
 
 /* 数字はモノ体 + tabular(桁がガタつかない) */
@@ -303,9 +321,9 @@ body {
 
 /* 入力欄は紙に空いた凹み — 積み木とは逆に、影を内側へ */
 .inset-field {
-  background: #ffffff;
-  border: 2px solid rgba(20, 22, 28, 0.12);
-  box-shadow: inset 0 2px 0 0 rgba(20, 22, 28, 0.05);
+  background: var(--color-white);
+  border: 2px solid rgba(var(--ink), 0.12);
+  box-shadow: inset 0 2px 0 0 rgba(var(--shade), 0.05);
 }
 .inset-field:focus {
   border-color: var(--color-toy-purple);
@@ -317,4 +335,96 @@ body {
   outline: 3px solid var(--color-toy-purple);
   outline-offset: 3px;
   border-radius: 14px;
+}
+
+
+/* ==========================================================================
+ * ダークモード(夜に見る用)
+ *
+ * 目に優しくするための決まりごと:
+ *   ・真っ黒・真っ白は使わない。紙は「暖かみのある炭色」、文字は「生成り色」
+ *     (真っ白の文字は暗い所でにじんで見え、目が疲れる)
+ *   ・青みを減らして、ほんのり暖色に寄せる
+ *   ・積み木の色は彩度(色の鮮やかさ)を落として、面がまぶしく光らないようにする
+ *   ・水玉と枠線はごく控えめに
+ * 切り替えは <html data-theme="dark">。選んでいなければ OS の設定に従う(layout.tsx)。
+ * ========================================================================== */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --background: #1c1a18;
+  --foreground: #e4ddd1;
+  --card: #272421;
+  --card-foreground: #e4ddd1;
+  --popover: #2a2724;
+  --popover-foreground: #e4ddd1;
+  --primary: #8a77ee;
+  --primary-foreground: #f3efe8;
+  --secondary: #2e2b27;
+  --secondary-foreground: #e4ddd1;
+  --muted: #2e2b27;
+  --muted-foreground: #9d978c;
+  --accent: #34304a;
+  --accent-foreground: #e4ddd1;
+  --destructive: #dc6a84;
+  --destructive-foreground: #f3efe8;
+
+  --ink: 232, 224, 210;
+  --shade: 0, 0, 0;
+  --surface: 39, 36, 33;
+
+  /* Tailwind の bg-white は「面の色」として使っているので、夜は炭色の面にする */
+  --color-white: #272421;
+  --color-on-accent: #f3efe8;
+  --color-grip-ink: #b3ada3;
+  --color-strong: #56514a;
+  --color-guide: #e0709c;
+
+  --color-paper: #1c1a18;
+  --color-paper-dot: #302d29;
+
+  --color-brick-face: #37325a;
+  --color-brick-deep: #272342;
+  --color-brick-ink: #ddd7fb;
+
+  --color-brick-hot-face: #57303c;
+  --color-brick-hot-deep: #3e222b;
+  --color-brick-hot-ink: #f7d3dc;
+
+  --color-brick-done-face: #2d4529;
+  --color-brick-done-deep: #20321d;
+  --color-brick-done-ink: #cfeac3;
+
+  --color-grip-face: #45413c;
+  --color-grip-deep: #34312d;
+
+  --color-toy-purple: #8a77ee;
+  --color-toy-purple-soft: #312c4d;
+
+  --color-faint: #857f76;
+  --color-calm: #8a77ee;
+  --color-warm: #d4a04c;
+  --color-hot: #de8a5e;
+  --color-critical: #dc7690;
+  --color-ontrack: #8a77ee;
+  --color-ontrack-bg: rgba(138, 119, 238, 0.14);
+  --color-atrisk: #d4a04c;
+  --color-atrisk-bg: rgba(212, 160, 76, 0.13);
+  --color-offtrack: #dc7690;
+  --color-offtrack-bg: rgba(220, 118, 144, 0.13);
+  --color-stale: #8f897f;
+  --color-achieved: #86c374;
+  --color-delta: #86c374;
+  --color-delta-bg: rgba(134, 195, 116, 0.13);
+}
+
+/* 切り替えボタンの絵: ライトでは月、ダークでは太陽 */
+.theme-icon-sun {
+  display: none;
+}
+:root[data-theme="dark"] .theme-icon-sun {
+  display: block;
+}
+:root[data-theme="dark"] .theme-icon-moon {
+  display: none;
 }

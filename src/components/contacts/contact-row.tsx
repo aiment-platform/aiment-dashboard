@@ -51,7 +51,7 @@ import { cn, isComposing } from "@/lib/utils";
 /** 閉じているときに行に出す連絡手段の数 */
 const SHOW_WHEN_CLOSED = 2;
 
-const POP = "w-auto rounded-[14px] border-2 border-[rgba(20,22,28,0.14)] p-2";
+const POP = "w-auto rounded-[14px] border-2 border-[rgba(var(--ink),0.14)] p-2";
 const POP_TITLE = "mb-1.5 px-0.5 text-[10px] font-bold tracking-wider text-muted-foreground";
 
 export function ContactRow({
@@ -107,7 +107,7 @@ export function ContactRow({
             <PopoverTrigger asChild>
               <button
                 type="button"
-                className="shrink-0 rounded-[6px] px-1.5 py-px text-[10px] font-bold text-white"
+                className="shrink-0 rounded-[6px] px-1.5 py-px text-[10px] font-bold text-on-accent"
                 style={{ background: KIND_COLOR[c.kind] }}
                 title="種類を変える"
                 data-testid="contact-kind"
@@ -128,7 +128,7 @@ export function ContactRow({
                     }}
                     className={cn(
                       "rounded-[8px] border-2 px-2 py-1 text-[11px] font-bold",
-                      c.kind === k ? "border-transparent text-white" : "border-[rgba(20,22,28,0.12)] bg-white",
+                      c.kind === k ? "border-transparent text-on-accent" : "border-[rgba(var(--ink),0.12)] bg-white",
                     )}
                     style={c.kind === k ? { background: KIND_COLOR[k] } : undefined}
                   >
@@ -239,7 +239,7 @@ export function ContactRow({
                     }}
                     className={cn(
                       "flex items-center gap-1.5 rounded-[8px] border-2 bg-white px-2 py-1 text-[11px] font-bold",
-                      c.owner_id === m.id ? "border-[var(--color-toy-purple)]" : "border-[rgba(20,22,28,0.12)]",
+                      c.owner_id === m.id ? "border-[var(--color-toy-purple)]" : "border-[rgba(var(--ink),0.12)]",
                     )}
                     data-testid={`owner-${m.id}`}
                   >
@@ -255,7 +255,7 @@ export function ContactRow({
           <label className="relative shrink-0" data-keep>
             <span
               className="brick brick-press block rounded-[8px] bg-white px-2 py-1 text-[11px] font-bold"
-              style={{ "--depth-x": "0px", "--depth-y": "2px", "--depth-color": "rgba(20,22,28,0.18)" } as React.CSSProperties}
+              style={{ "--depth-x": "0px", "--depth-y": "2px", "--depth-color": "rgba(var(--shade),0.18)" } as React.CSSProperties}
             >
               {STATUS_LABEL[c.status]}
             </span>
@@ -412,8 +412,8 @@ function ChannelMenu({
               className={cn(
                 "rounded-[8px] border-2 px-2 py-1 text-[11px] font-bold",
                 k === current
-                  ? "border-transparent bg-[var(--color-toy-purple)] text-white"
-                  : "border-[rgba(20,22,28,0.12)] bg-white hover:border-[var(--color-toy-purple)]",
+                  ? "border-transparent bg-[var(--color-toy-purple)] text-on-accent"
+                  : "border-[rgba(var(--ink),0.12)] bg-white hover:border-[var(--color-toy-purple)]",
               )}
               data-testid={`type-${k}`}
             >
@@ -547,7 +547,7 @@ function NewLinkInput({
           onMouseDown={(e) => e.preventDefault()}
           className={cn(
             "num shrink-0 cursor-pointer rounded-[6px] px-1.5 py-0.5 text-[10px] font-bold",
-            channel ? "bg-[var(--color-toy-purple)] text-white" : "bg-white/70 opacity-60",
+            channel ? "bg-[var(--color-toy-purple)] text-on-accent" : "bg-white/70 opacity-60",
           )}
           title="押すと連絡手段を選べます"
           data-testid="address-guess"
@@ -605,14 +605,14 @@ function Details({
   const has = new Set(c.links.map((l) => l.channel));
   const [, start] = useTransition();
   return (
-    <div className="space-y-3 border-t-2 border-[rgba(20,22,28,0.08)] px-3 py-3" data-testid="contact-editor">
+    <div className="space-y-3 border-t-2 border-[rgba(var(--ink),0.08)] px-3 py-3" data-testid="contact-editor">
       <div>
         <span className="mb-1 block text-[10.5px] font-bold text-muted-foreground">一言</span>
         <input
           defaultValue={c.summary ?? ""}
           maxLength={200}
           placeholder="閉じていても見える短い説明(例: 登録者3万人・コラボ前向き)"
-          className="w-full rounded-[8px] border-2 border-[rgba(20,22,28,0.12)] bg-white px-2 py-1.5 text-[12.5px] font-bold outline-none focus:border-[var(--color-toy-purple)]"
+          className="w-full rounded-[8px] border-2 border-[rgba(var(--ink),0.12)] bg-white px-2 py-1.5 text-[12.5px] font-bold outline-none focus:border-[var(--color-toy-purple)]"
           onBlur={(e) => {
             const v = e.target.value.trim();
             if ((c.summary ?? "") === v) return;
@@ -631,7 +631,7 @@ function Details({
           defaultValue={c.note ?? ""}
           rows={4}
           placeholder="話した内容 / 経緯 / 次にやること など、長めに"
-          className="w-full resize-y rounded-[8px] border-2 border-[rgba(20,22,28,0.12)] bg-white px-2 py-1.5 text-[12.5px] outline-none focus:border-[var(--color-toy-purple)]"
+          className="w-full resize-y rounded-[8px] border-2 border-[rgba(var(--ink),0.12)] bg-white px-2 py-1.5 text-[12.5px] outline-none focus:border-[var(--color-toy-purple)]"
           onBlur={(e) => {
             const v = e.target.value;
             if ((c.note ?? "") === v) return;
@@ -670,8 +670,8 @@ function Details({
                 className={cn(
                   "rounded-[7px] border-2 px-1.5 py-0.5 text-[10.5px] font-bold",
                   on
-                    ? "border-transparent bg-[var(--color-toy-purple)] text-white"
-                    : "border-[rgba(20,22,28,0.12)] bg-white/70 text-muted-foreground hover:border-[var(--color-toy-purple)]",
+                    ? "border-transparent bg-[var(--color-toy-purple)] text-on-accent"
+                    : "border-[rgba(var(--ink),0.12)] bg-white/70 text-muted-foreground hover:border-[var(--color-toy-purple)]",
                 )}
                 aria-pressed={on}
                 title={on ? `${ADDRESS_LABEL[ch]} を外す` : `${ADDRESS_LABEL[ch]} を足す`}
@@ -688,7 +688,7 @@ function Details({
           type="button"
           onClick={onClose}
           className="brick brick-press rounded-[8px] bg-white px-2.5 py-1 text-[11px] font-bold"
-          style={{ "--depth-x": "0px", "--depth-y": "2px", "--depth-color": "rgba(20,22,28,0.18)" } as React.CSSProperties}
+          style={{ "--depth-x": "0px", "--depth-y": "2px", "--depth-color": "rgba(var(--shade),0.18)" } as React.CSSProperties}
         >
           とじる
         </button>

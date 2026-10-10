@@ -80,7 +80,7 @@ function OwnerChip({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="brick brick-press shrink-0 rounded-[7px] font-bold text-white"
+          className="brick brick-press shrink-0 rounded-[7px] font-bold text-on-accent"
           style={
             {
               width: size,
@@ -100,7 +100,7 @@ function OwnerChip({
         </button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-44 rounded-[14px] border-2 border-[rgba(20,22,28,0.14)] p-2"
+        className="w-44 rounded-[14px] border-2 border-[rgba(var(--ink),0.14)] p-2"
         sideOffset={8}
         align="start"
         onClick={(e) => e.stopPropagation()}
@@ -177,7 +177,7 @@ function SubtaskRow({
           width: BRANCH_W,
           height: 3,
           marginLeft: TRUNK_X,
-          background: task.done ? "rgba(20,22,28,0.2)" : "var(--color-toy-purple)",
+          background: task.done ? "rgba(var(--ink),0.2)" : "var(--color-toy-purple)",
         }}
       />
       <div className="group/row ml-2 flex items-center gap-1.5">
@@ -196,8 +196,8 @@ function SubtaskRow({
           className={cn(
             "grid size-[15px] shrink-0 place-items-center rounded-[4px] border-2 transition-colors",
             task.done
-              ? "border-transparent bg-[var(--color-brick-done-deep)] text-[#1e4d17]"
-              : "border-[rgba(20,22,28,0.25)] bg-white hover:border-[var(--color-toy-purple)]",
+              ? "border-transparent bg-[var(--color-brick-done-deep)] text-[var(--color-brick-done-ink)]"
+              : "border-[rgba(var(--ink),0.25)] bg-white hover:border-[var(--color-toy-purple)]",
           )}
           aria-label={task.done ? "やり直す" : "できた"}
         >
@@ -347,7 +347,7 @@ export function ToyBlock({
         data-kind="note"
       >
         <div
-          className="block-grab flex items-center rounded-[13px] border-[2.5px] border-dashed border-[rgba(20,22,28,0.35)] bg-[rgba(255,255,255,0.45)] px-3 backdrop-blur-[1px]"
+          className="block-grab flex items-center rounded-[13px] border-[2.5px] border-dashed border-[rgba(var(--ink),0.35)] bg-[rgba(var(--surface),0.45)] px-3 backdrop-blur-[1px]"
           data-dragging={dragging}
           style={{ height, width }}
           onPointerDown={(e) => {
@@ -375,7 +375,7 @@ export function ToyBlock({
             <button
               type="button"
               onClick={(e) => wasClick(e) && setEditingTitle(true)}
-              className="whitespace-pre-wrap break-words text-left font-bold text-[rgba(20,22,28,0.62)]"
+              className="whitespace-pre-wrap break-words text-left font-bold text-[rgba(var(--ink),0.62)]"
               style={text}
               title="クリックで書きかえ(Shift+Enter で改行)"
               data-testid="note-text"
@@ -420,7 +420,7 @@ export function ToyBlock({
           type="button"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={onToggleExpand}
-          className="brick brick-press grid shrink-0 place-items-center rounded-l-[13px] text-[#5b5b5b]"
+          className="brick brick-press grid shrink-0 place-items-center rounded-l-[13px] text-[var(--color-grip-ink)]"
           style={
             {
               width: HANDLE_W,

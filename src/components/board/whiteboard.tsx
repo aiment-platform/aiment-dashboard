@@ -16,7 +16,7 @@ import {
 } from "@/app/actions";
 import { setActivePane, isActivePane } from "@/components/board/active-pane";
 import { ToolPalette, type Tool } from "@/components/board/tool-palette";
-import { DraftShape, ITEM_COLORS, SectionsLayer, StrokesLayer } from "@/components/board/items-layer";
+import { DraftShape, ITEM_COLORS, inkOf, SectionsLayer, StrokesLayer } from "@/components/board/items-layer";
 import { LinkDragLine, LinksLayer } from "@/components/board/links-layer";
 import { alignBox, boundsOf, centerInside, simplify, unionBox, type Box, type Guide } from "@/lib/board-geometry";
 import { wouldCycle } from "@/lib/board-geometry";
@@ -1675,7 +1675,7 @@ function Board({
           {guides.map((g, i) => (
             <div
               key={i}
-              className="pointer-events-none absolute bg-[#ff3d8b]"
+              className="pointer-events-none absolute bg-[var(--color-guide)]"
               style={
                 g.axis === "v"
                   ? { left: g.at, top: g.from, width: 1.5 / cam.scale, height: g.to - g.from, zIndex: 340 }
@@ -1788,7 +1788,7 @@ function Board({
                             color: memberColor(w.id),
                             "--depth-x": "0px",
                             "--depth-y": "2px",
-                            "--depth-color": "rgba(20,22,28,0.12)",
+                            "--depth-color": "rgba(var(--shade),0.12)",
                           } as React.CSSProperties
                         }
                       >
@@ -1837,7 +1837,7 @@ function Board({
           {/* 複製中の合図 */}
           {duplicating && heldPos && (
             <div
-              className="brick pointer-events-none absolute grid size-6 place-items-center rounded-full bg-[var(--color-toy-purple)] text-[14px] font-bold leading-none text-white"
+              className="brick pointer-events-none absolute grid size-6 place-items-center rounded-full bg-[var(--color-toy-purple)] text-[14px] font-bold leading-none text-on-accent"
               style={{
                 left: heldPos.x - 10,
                 top: heldPos.y - 10,
@@ -1899,8 +1899,8 @@ function Board({
             return (
               <div className="absolute" style={{ left: all.x + all.w + 14, top: all.y - 4, zIndex: 300, ...screenSized }}>
                 <div
-                  className="brick flex items-center gap-1 rounded-[13px] border-2 border-[rgba(20,22,28,0.12)] bg-white p-1"
-                  style={{ "--depth-x": "0px", "--depth-y": "4px", "--depth-color": "rgba(20,22,28,0.18)" } as React.CSSProperties}
+                  className="brick flex items-center gap-1 rounded-[13px] border-2 border-[rgba(var(--ink),0.12)] bg-white p-1"
+                  style={{ "--depth-x": "0px", "--depth-y": "4px", "--depth-color": "rgba(var(--shade),0.18)" } as React.CSSProperties}
                   onPointerDown={(e) => e.stopPropagation()}
                   data-testid="item-toolbar"
                 >
@@ -1909,8 +1909,8 @@ function Board({
                       <button
                         key={c}
                         type="button"
-                        className="size-6 rounded-full border-2 border-white shadow-[0_0_0_1.5px_rgba(20,22,28,0.15)]"
-                        style={{ background: c }}
+                        className="size-6 rounded-full border-2 border-white shadow-[0_0_0_1.5px_rgba(var(--shade),0.15)]"
+                        style={{ background: inkOf(c) }}
                         onClick={() => {
                           const before = strokes.map((i) => ({ id: i.id, color: i.color }));
                           const after = strokes.map((i) => ({ id: i.id, color: c }));
@@ -2014,7 +2014,7 @@ function Board({
           {draft && draftKind === "note" && (
             <div className="absolute" style={{ left: draft.x, top: draft.y, zIndex: 70 }}>
               <div
-                className="flex items-center rounded-[13px] border-[2.5px] border-dashed border-[rgba(20,22,28,0.35)] bg-[rgba(255,255,255,0.55)] px-2.5 py-2"
+                className="flex items-center rounded-[13px] border-[2.5px] border-dashed border-[rgba(var(--ink),0.35)] bg-[rgba(var(--surface),0.55)] px-2.5 py-2"
                 style={{ minHeight: BLOCK_H }}
               >
                 <NoteTextarea
@@ -2146,7 +2146,7 @@ function ZoomDock({
   const style = {
     "--depth-x": "0px",
     "--depth-y": "3px",
-    "--depth-color": "rgba(20,22,28,0.18)",
+    "--depth-color": "rgba(var(--shade),0.18)",
   } as React.CSSProperties;
   return (
     <>

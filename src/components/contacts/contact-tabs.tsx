@@ -38,7 +38,7 @@ export function ContactTabs({
     router.replace(qs ? `/contacts?${qs}` : "/contacts");
   };
 
-  const depth = { "--depth-x": "0px", "--depth-y": "3px", "--depth-color": "rgba(20,22,28,0.18)" } as React.CSSProperties;
+  const depth = { "--depth-x": "0px", "--depth-y": "3px", "--depth-color": "rgba(var(--shade),0.18)" } as React.CSSProperties;
 
   return (
     <div className="space-y-2">
@@ -53,9 +53,9 @@ export function ContactTabs({
             onClick={() => go({ kind: t })}
             className={cn(
               "brick brick-press flex h-9 items-center gap-1.5 rounded-[11px] px-3 text-[13px] font-bold",
-              active ? "text-white" : "bg-white",
+              active ? "text-on-accent" : "bg-white",
             )}
-            style={{ ...depth, ...(active ? { background: t ? KIND_COLOR[t] : "#14161c" } : {}) }}
+            style={{ ...depth, ...(active ? { background: t ? KIND_COLOR[t] : "var(--color-strong)" } : {}) }}
             aria-pressed={active}
             data-testid={`tab-${t ?? "all"}`}
           >
@@ -67,7 +67,7 @@ export function ContactTabs({
       <input
         defaultValue={q}
         placeholder="さがす"
-        className="ml-auto h-9 w-[160px] rounded-[11px] border-2 border-[rgba(20,22,28,0.12)] bg-white px-3 text-[12px] font-bold outline-none focus:border-[var(--color-toy-purple)]"
+        className="ml-auto h-9 w-[160px] rounded-[11px] border-2 border-[rgba(var(--ink),0.12)] bg-white px-3 text-[12px] font-bold outline-none focus:border-[var(--color-toy-purple)]"
         onKeyDown={(e) => e.key === "Enter" && go({ q: (e.target as HTMLInputElement).value || null })}
         onBlur={(e) => go({ q: e.target.value || null })}
         data-testid="contact-search"
@@ -88,8 +88,8 @@ export function ContactTabs({
               className={cn(
                 "rounded-[8px] border-2 px-2 py-0.5 text-[11px] font-bold",
                 on
-                  ? "border-transparent bg-[var(--color-toy-purple)] text-white"
-                  : "border-[rgba(20,22,28,0.12)] bg-white text-muted-foreground hover:border-[var(--color-toy-purple)]",
+                  ? "border-transparent bg-[var(--color-toy-purple)] text-on-accent"
+                  : "border-[rgba(var(--ink),0.12)] bg-white text-muted-foreground hover:border-[var(--color-toy-purple)]",
               )}
               aria-pressed={on}
               data-testid={`via-${channel}`}

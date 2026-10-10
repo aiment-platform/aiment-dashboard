@@ -35,8 +35,8 @@ export function WorkRow({ item, ownerName }: { item: WorkItem; ownerName: string
         className={cn(
           "grid size-[17px] shrink-0 place-items-center rounded-[5px] border-2 transition-colors",
           item.done
-            ? "border-transparent bg-[var(--color-brick-done-deep)] text-[#1e4d17]"
-            : "border-[rgba(20,22,28,0.25)] bg-white hover:border-[var(--color-toy-purple)]",
+            ? "border-transparent bg-[var(--color-brick-done-deep)] text-[var(--color-brick-done-ink)]"
+            : "border-[rgba(var(--ink),0.25)] bg-white hover:border-[var(--color-toy-purple)]",
         )}
         aria-label={item.done ? "やり直す" : "できた"}
       >

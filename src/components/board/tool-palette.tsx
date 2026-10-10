@@ -46,8 +46,8 @@ const TOOLS: { id: Tool; label: string; key: string; icon: React.ReactNode }[] =
 export function ToolPalette({ tool, onTool }: { tool: Tool; onTool: (t: Tool) => void }) {
   return (
     <div
-      className="brick absolute left-6 top-1/2 z-40 flex select-none -translate-y-1/2 flex-col gap-1 rounded-[14px] border-2 border-[rgba(20,22,28,0.12)] bg-white p-1"
-      style={{ "--depth-x": "0px", "--depth-y": "4px", "--depth-color": "rgba(20,22,28,0.16)" } as React.CSSProperties}
+      className="brick absolute left-6 top-1/2 z-40 flex select-none -translate-y-1/2 flex-col gap-1 rounded-[14px] border-2 border-[rgba(var(--ink),0.12)] bg-white p-1"
+      style={{ "--depth-x": "0px", "--depth-y": "4px", "--depth-color": "rgba(var(--shade),0.16)" } as React.CSSProperties}
       onPointerDown={(e) => e.stopPropagation()}
       data-testid="tool-palette"
     >
@@ -58,7 +58,7 @@ export function ToolPalette({ tool, onTool }: { tool: Tool; onTool: (t: Tool) =>
           onClick={() => onTool(t.id)}
           className={cn(
             "grid size-9 place-items-center rounded-[10px]",
-            tool === t.id ? "bg-[var(--color-toy-purple)] text-white" : "text-foreground/70 hover:bg-secondary",
+            tool === t.id ? "bg-[var(--color-toy-purple)] text-on-accent" : "text-foreground/70 hover:bg-secondary",
           )}
           title={`${t.label}  ${t.key}`}
           aria-label={t.label}

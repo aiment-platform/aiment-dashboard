@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listMembers } from "@/lib/services/members";
 import { getCurrentMember } from "@/lib/current-member";
 import { MemberSquare } from "@/components/member-square";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 /**
  * 一覧・設定ページの上の帯。積み木ボードには出ない。
@@ -9,7 +10,7 @@ import { MemberSquare } from "@/components/member-square";
  */
 export async function Topbar() {
   const [members, current] = await Promise.all([listMembers(), getCurrentMember()]);
-  const depth = { "--depth-x": "0px", "--depth-y": "3px", "--depth-color": "rgba(20,22,28,0.18)" } as React.CSSProperties;
+  const depth = { "--depth-x": "0px", "--depth-y": "3px", "--depth-color": "rgba(var(--shade),0.18)" } as React.CSSProperties;
   const chip = "brick brick-press flex h-9 items-center gap-2 rounded-[11px] bg-white px-3 text-[13px] font-bold";
 
   return (
@@ -30,6 +31,7 @@ export async function Topbar() {
         設定
       </Link>
       <div className="flex-1" />
+      <ThemeToggle className={`${chip} !w-9 justify-center !px-0`} style={depth} />
       <span className={chip} style={depth}>
         <MemberSquare id={current?.id ?? null} name={current?.name} size={20} />
         {current?.name ?? "メンバー"}

@@ -176,7 +176,7 @@ export function CrossPaneLinks({ boards }: { boards: PeriodBoard[] }) {
       <svg className="pointer-events-none fixed inset-0 z-30 h-full w-full" data-testid="cross-links">
         <defs>
           {[
-            ["xarrow", "#6c4bf4"],
+            ["xarrow", "var(--color-toy-purple)"],
             ["xarrow-done", "#1f9d55"],
           ].map(([id, c]) => (
             <marker key={id} id={id} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -191,7 +191,7 @@ export function CrossPaneLinks({ boards }: { boards: PeriodBoard[] }) {
               <path
                 d={s.d}
                 fill="none"
-                stroke={on ? "#6c4bf4" : s.done ? "#1f9d55" : "#6c4bf4"}
+                stroke={s.done && !on ? "#1f9d55" : "var(--color-toy-purple)"}
                 strokeWidth={on ? 3.5 : 2.5}
                 strokeDasharray={s.partial ? "5 4" : undefined}
                 opacity={on ? 1 : s.partial ? 0.6 : 0.85}

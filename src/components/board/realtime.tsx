@@ -114,7 +114,7 @@ export function OtherCursors({ scale }: { scale: number }) {
               />
             </svg>
             <span
-              className="brick absolute left-[19px] top-[22px] whitespace-nowrap rounded-[9px] px-2 py-[3px] text-[12px] font-bold text-white"
+              className="brick absolute left-[19px] top-[22px] whitespace-nowrap rounded-[9px] px-2 py-[3px] text-[12px] font-bold text-on-accent"
               style={
                 {
                   background: color,
@@ -155,13 +155,13 @@ export function PresenceChips() {
               {
                 "--depth-x": "0px",
                 "--depth-y": "3px",
-                "--depth-color": "rgba(20,22,28,0.18)",
+                "--depth-color": "rgba(var(--shade),0.18)",
               } as React.CSSProperties
             }
             title={presence.cursor ? "この盤を見ています" : "開いていますが、まだ動かしていません"}
           >
             <span
-              className="grid size-5 place-items-center rounded-[6px] text-[11px] font-bold text-white"
+              className="grid size-5 place-items-center rounded-[6px] text-[11px] font-bold text-on-accent"
               style={{ background: color }}
             >
               {(info?.name ?? "?").slice(0, 1)}
@@ -170,7 +170,7 @@ export function PresenceChips() {
             {/* まだ動かしていない人は薄い点。動かした人は色つきの点 */}
             <span
               className="size-[7px] rounded-full"
-              style={{ background: presence.cursor ? color : "rgba(20,22,28,0.18)" }}
+              style={{ background: presence.cursor ? color : "rgba(var(--ink),0.18)" }}
             />
           </span>
         );

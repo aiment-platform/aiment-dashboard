@@ -74,7 +74,7 @@ export function BoardPanes({ boards, shared }: { boards: PeriodBoard[]; shared: 
           <div
             key={`${index}:${b.period.id}`}
             className={cn(
-              "relative h-full min-w-0 flex-1 overflow-hidden border-l-[3px] border-[rgba(20,22,28,0.14)] first:border-l-0",
+              "relative h-full min-w-0 flex-1 overflow-hidden border-l-[3px] border-[rgba(var(--ink),0.14)] first:border-l-0",
               // いまキーを受けている枠は、上のふちを紫にして分かるようにする
               "after:pointer-events-none after:absolute after:inset-x-0 after:top-0 after:z-50 after:h-[4px] after:transition-colors",
               (activePane ?? "pane-0") === `pane-${index}` ? "after:bg-[var(--color-toy-purple)]" : "after:bg-transparent",
